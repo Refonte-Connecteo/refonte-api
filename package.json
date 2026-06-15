@@ -4,12 +4,20 @@
   "private": true,
   "description": "API Express.js for refonte-api",
   "type": "module",
-  "main": "src/server.js",
+  "main": "dist/server.js",
   "scripts": {
-    "start": "node src/server.js",
-    "dev": "node --watch src/server.js"
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "dev": "npm run build && node dist/server.js"
   },
   "dependencies": {
-    "express": "^4.21.2"
+    "@prisma/client": "^7.8.0",
+    "express": "^4.21.2",
+    "prisma": "^7.8.0"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.0",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.5.0"
   }
 }
