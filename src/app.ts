@@ -1,4 +1,7 @@
 import express, { Request, Response, NextFunction } from 'express';
+import { Prisma } from '@/generated/prisma/client';
+import routes from '@/routes/index';
+import { ValidationError, NotFoundError } from '@/errors/index';
 
 const app = express();
 
@@ -16,6 +19,8 @@ app.get('/health', (req: Request, res: Response) => {
   });
 });
 
+app.use('/api', routes);
+
 app.use((req: Request, res: Response) => {
   res.status(404).json({
     error: 'Route introuvable',
@@ -23,9 +28,25 @@ app.use((req: Request, res: Response) => {
 });
 
 app.use((err: unknown, req: Request, res: Response, next: NextFunction) => {
+  if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') {
+    res.status(404).json({ error: 'Resource not found' });
+    return;
+  }
+
+  const error = err as Error & { statusCode?: number; isOperational?: boolean; errors?: Record<string, string> };
+
+  if (error.isOperational) {
+    const body: Record<string, unknown> = { error: error.message };
+    if (error instanceof ValidationError && error.errors) {
+      body.errors = error.errors;
+    }
+    res.status(error.statusCode!).json(body);
+    return;
+  }
+
   console.error(err);
   res.status(500).json({
-    error: 'Erreur interne du serveur',
+    error: 'Internal server error',
   });
 });
 
