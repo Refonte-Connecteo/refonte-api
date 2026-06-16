@@ -1,0 +1,164 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// Admin users
+model user_type {
+  id    Int     @id @default(autoincrement())
+  type  String  @unique
+  users user_[]
+}
+
+model user_ {
+  id           Int       @id @default(autoincrement())
+  email        String    @unique
+  username     String    @unique
+  password_hash String
+  user_type_id Int
+  created_at   DateTime  @default(now())
+  user_type    user_type @relation(fields: [user_type_id], references: [id])
+}
+
+/// S1 — Hero carousel
+model hero_slide {
+  id          Int      @id @default(autoincrement())
+  image_url   String
+  title       String?
+  description String?
+  cta_label   String?
+  cta_url     String?
+  position    Int      @default(0)
+  is_active   Boolean  @default(true)
+}
+
+/// S2 — Animated KPIs
+model kpi_stat {
+  id        Int      @id @default(autoincrement())
+  label     String
+  value     String
+  unit      String?
+  position  Int      @default(0)
+  is_active Boolean  @default(true)
+}
+
+/// S2 — CEO message
+model ceo_message {
+  id          Int      @id @default(autoincrement())
+  title       String
+  description String
+  image_url   String?
+  updated_at  DateTime @default(now())
+}
+
+/// S2 — Client references / logos
+model reference {
+  id          Int      @id @default(autoincrement())
+  label       String
+  image_url   String
+  website_url String?
+  position    Int      @default(0)
+  is_active   Boolean  @default(true)
+}
+
+/// S4 — Downloadable service catalogue (lead magnet)
+model catalogue {
+  id             Int      @id @default(autoincrement())
+  title          String
+  file_url       String
+  is_lead_magnet Boolean  @default(true)
+  uploaded_at    DateTime @default(now())
+}
+
+/// S5 — Job postings
+model job_posting {
+  id            Int           @id @default(autoincrement())
+  title         String
+  contract_type String
+  description   String?
+  external_url  String?
+  fiche_url     String?
+  is_active     Boolean       @default(true)
+  created_at    DateTime      @default(now())
+  applications  application[]
+}
+
+/// S5 — Job applications
+model application {
+  id           Int         @id @default(autoincrement())
+  job_id       Int
+  first_name   String
+  last_name    String
+  email        String
+  phone        String?
+  cv_url       String
+  cover_letter String?
+  status       String      @default("pending")
+  submitted_at DateTime    @default(now())
+  job_posting  job_posting @relation(fields: [job_id], references: [id], onDelete: Cascade)
+}
+
+/// S5 — Spontaneous applications
+model spontaneous_application {
+  id           Int      @id @default(autoincrement())
+  first_name   String
+  last_name    String
+  email        String
+  phone        String?
+  cv_url       String
+  motivation   String?
+  status       String   @default("pending")
+  submitted_at DateTime @default(now())
+}
+
+/// S6 — News / articles / reports
+model article {
+  id             Int      @id @default(autoincrement())
+  title          String
+  description    String?
+  type           String   @default("article")
+  cover_url      String?
+  file_url       String?
+  is_lead_magnet Boolean  @default(false)
+  is_published   Boolean  @default(false)
+  published_at   DateTime @default(now())
+}
+
+/// S6 — Events
+model event {
+  id           Int          @id @default(autoincrement())
+  title        String
+  description  String?
+  event_date   DateTime?
+  youtube_url  String?
+  is_published Boolean      @default(false)
+  event_images event_image[]
+}
+
+/// S6 — Event photo gallery
+model event_image {
+  id        Int    @id @default(autoincrement())
+  event_id  Int
+  image_url String
+  caption   String?
+  position  Int    @default(0)
+  event     event  @relation(fields: [event_id], references: [id], onDelete: Cascade)
+}
+
+/// S7 — Contact form
+model contact_message {
+  id          Int      @id @default(autoincrement())
+  first_name  String
+  last_name   String
+  email       String
+  phone       String?
+  company     String?
+  country     String?
+  message     String
+  is_read     Boolean  @default(false)
+  submitted_at DateTime @default(now())
+}
