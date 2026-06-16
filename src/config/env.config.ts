@@ -13,6 +13,7 @@ function requireEnv(name: string): string {
 function validateEnv() {
   const requiredVars: string[] = [
     'DATABASE_URL',
+    'JWT_SECRET',
   ];
 
   const missing = requiredVars.filter(name => !process.env[name]);
@@ -38,6 +39,7 @@ export const envConfig = {
   serverConfig: {
     port: getNumber('PORT', 3000),
     nodeEnv: process.env.NODE_ENV || 'development',
+    jwtSecret: requireEnv('JWT_SECRET'),
   },
 
   dbConfig: {
