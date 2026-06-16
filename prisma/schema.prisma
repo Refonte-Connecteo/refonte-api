@@ -11,10 +11,10 @@ datasource db {
 model user_type {
   id    Int     @id @default(autoincrement())
   type  String  @unique
-  users user_[]
+  users user[]
 }
 
-model user_ {
+model user {
   id           Int       @id @default(autoincrement())
   email        String    @unique
   username     String    @unique
@@ -160,5 +160,5 @@ model contact_message {
   country     String?
   message     String
   is_read     Boolean  @default(false)
-  submitted_at DateTime @default(now())
+  submitted_at DateTime @default(now()) 
 }
