@@ -1,4 +1,5 @@
 import express, { Request, Response, NextFunction } from 'express';
+// import { Prisma } from './src/generated/prisma/client';
 import { Prisma } from '@/generated/prisma/client';
 import routes from '@/routes/index';
 import { ValidationError, NotFoundError } from '@/errors/index';
