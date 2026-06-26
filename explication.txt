@@ -1,5 +1,5 @@
-EXPLICATION - Migration de JavaScript vers TypeScript
-====================================================
+EXPLICATION
+===========
 
 1. PROBLÈME
    - Le projet utilisait TypeScript dans la plupart des fichiers (.ts), mais
@@ -43,5 +43,211 @@ EXPLICATION - Migration de JavaScript vers TypeScript
    - Pour lancer en prod : "npm start"
    - Pour compiler : "npm run build"
    - Pour vérifier le typage : "npm run typecheck"
-   - tsx permet d'exécuter directement du TypeScript sans étape de
-     compilation, contrairement à ts-node ou tsc.
+- tsx permet d'exécuter directement du TypeScript sans étape de
+  compilation, contrairement à ts-node ou tsc.
+
+
+GESTION DES ADMINISTRATEURS (superAdmin / admin)
+================================================
+
+1. OBJECTIF
+   - Deux types d'utilisateurs : "superAdmin" (type_id=1) et "admin" (type_id=2)
+   - Le superAdmin (créé via le seed) peut inviter de nouveaux admins.
+   - L'admin invité reçoit un email (via Resend) avec un lien pour définir
+     son mot de passe.
+   - Le superAdmin peut lister et désactiver les admins.
+   - Un admin ne peut pas inviter ni désactiver d'autres admins.
+
+2. ACTIONS EFFECTUÉES
+
+   2.1 Mise à jour du schéma Prisma (prisma/schema.prisma)
+       Modèle `user` modifié :
+       - password_hash  : String? (optionnel → l'invité n'a pas encore de mot
+         de passe)
+       - is_active       : Boolean @default(false) → true après activation
+       - invitation_token: String? @unique → token généré pour l'email
+       - invitation_token_expires : DateTime? → date d'expiration du token
+
+   2.2 Installation des dépendances
+       - bcryptjs          : hachage des mots de passe
+       - jsonwebtoken      : création et vérification des JWT
+       - resend            : envoi d'emails transactionnels
+       - dotenv            : chargement des variables d'environnement
+       - cors              : autorisation des requêtes cross-origin
+       - @prisma/adapter-pg: adaptateur PostgreSQL pour Prisma 7
+       - @types/bcryptjs, @types/jsonwebtoken, @types/cors
+
+   2.3 Fichiers créés
+
+       src/lib/prisma.ts
+         - Instance PrismaClient avec l'adaptateur PrismaPg
+
+       src/config/env.config.ts
+         - Validation et export des variables d'environnement :
+           PORT, DATABASE_URL, JWT_SECRET, JWT_EXPIRES_IN,
+           RESEND_API_KEY, FRONTEND_URL, INVITATION_TOKEN_EXPIRES_HOURS
+
+       src/errors/index.ts
+         - Classes d'erreurs : AppError, NotFoundError, UnauthorizedError,
+           ForbiddenError, ConflictError, BadRequestError
+
+       src/databases/seed.ts
+         - Crée les types user_type : superAdmin (id=1), admin (id=2)
+         - Crée le superAdmin par défaut :
+           email: superadmin@connecteo.fr / password: SuperAdmin123!
+
+       src/services/email.service.ts
+         - Fonction sendInvitationEmail(email, token)
+         - Utilise Resend si la clé API est définie
+         - Sinon, mode mock (log dans la console)
+
+       src/services/user.services.ts
+         - inviteAdmin(email, username) → crée user, génère token, envoie email
+         - setPassword(token, password) → vérifie token, hash le password, active
+         - login(email, password) → vérifie credentials, retourne JWT
+         - getAllAdmins() → liste tous les admins (user_type_id=2)
+         - deactivateAdmin(id) → passe is_active=false
+         - getProfile(userId) → infos de l'utilisateur connecté
+
+       src/middlewares/auth.middleware.ts
+         - authenticate : vérifie le JWT (header Authorization: Bearer <token>)
+         - requireSuperAdmin : vérifie user_type_id === 1
+         - requireAdmin : vérifie user_type_id === 1 ou 2
+         - asyncHandler : wrapper pour gérer les erreurs async
+
+       src/controllers/user.controller.ts
+         - Handlers pour chaque endpoint
+
+       src/routes/index.ts
+         - POST /api/admin/login (public)
+         - POST /api/admin/set-password (public)
+         - POST /api/admin/invite (authentifié, superAdmin)
+         - GET  /api/admin       (authentifié, superAdmin)
+         - DELETE /api/admin/:id (authentifié, superAdmin)
+         - GET  /api/admin/me    (authentifié, admin+)
+
+   2.4 Variables d'environnement ajoutées (.env)
+       - JWT_SECRET
+       - JWT_EXPIRES_IN (défaut: 7d)
+       - RESEND_API_KEY
+       - FRONTEND_URL (défaut: http://localhost:5173)
+       - INVITATION_TOKEN_EXPIRES_HOURS (défaut: 24)
+
+   2.5 Mise à jour de src/app.ts
+       - Import de "dotenv/config" en tête
+       - Ajout de cors()
+       - Montage des routes sur /api
+       - Gestion des erreurs avec AppError (status code personnalisé)
+
+3. FLUX COMPLET
+
+   SuperAdmin (via API)
+      │
+      ├─ POST /api/admin/invite
+      │    Body: { email, username }
+      │    → Crée user (password_hash=null, is_active=false)
+      │    → Génère invitation_token (UUID)
+      │    → Envoie email via Resend (ou log si pas de clé)
+      │
+      ▼
+   Email envoyé avec lien :
+      https://frontend/set-password?token=xxx
+      │
+      ▼
+   Admin clique sur le lien (frontend → API)
+      │
+      ├─ POST /api/admin/set-password
+      │    Body: { token, password }
+      │    → Vérifie token + expiration
+      │    → Hash le mot de passe (bcrypt, 12 rounds)
+      │    → is_active = true, token supprimé
+      │
+      ▼
+   Admin peut se connecter
+      │
+      ├─ POST /api/admin/login
+      │    Body: { email, password }
+      │    → Vérifie credentials + is_active
+      │    → Retourne { user, token } (JWT)
+      │
+      ▼
+   SuperAdmin peut gérer les admins :
+      ├─ GET  /api/admin       → liste tous les admins
+      ├─ GET  /api/admin/me    → profil connecté
+      └─ DELETE /api/admin/:id → désactive l'admin (soft delete)
+
+4. ENDPOINTS RÉCAPITULATIFS
+
+   Méthode  Route                  Auth         Rôle
+   ------   --------------------   ----------   -----------
+   POST     /api/admin/login       publique     -
+   POST     /api/admin/set-password publique     -
+   POST     /api/admin/invite      Bearer JWT   superAdmin
+   GET      /api/admin             Bearer JWT   superAdmin
+   DELETE   /api/admin/:id         Bearer JWT   superAdmin
+   GET      /api/admin/me          Bearer JWT   admin+
+
+5. SUPERADMIN PAR DÉFAUT (seed)
+   Email   : superadmin@connecteo.fr
+   Password: SuperAdmin123!
+
+
+FRONTEND — Interface d'administration (Next.js)
+================================================
+
+1. STRUCTURE DES FICHIERS (dossier front/app/admin/)
+
+   front/
+   ├── .env.local                    # NEXT_PUBLIC_API_URL
+   ├── lib/
+   │   └── api.ts                    # Client API pour le backend
+   └── app/admin/
+       ├── types.ts                  # Interfaces TypeScript (User, etc.)
+       ├── layout.tsx                # Layout admin (métadonnées)
+       ├── login/page.tsx            # Page de connexion
+       ├── set-password/page.tsx     # Définition du mot de passe (depuis email)
+       ├── dashboard/page.tsx        # Tableau de bord (liste des admins)
+       └── invite/page.tsx           # Invitation d'un nouvel admin
+
+2. PAGES CRÉÉES
+
+   /admin/login
+     - Formulaire email + mot de passe
+     - Stocke le JWT dans localStorage
+     - Redirige vers /admin/dashboard
+
+   /admin/set-password?token=xxx
+     - Récupère le token depuis l'URL
+     - Formulaire mot de passe + confirmation
+     - Appelle POST /api/admin/set-password
+     - Redirige vers /admin/login après succès
+
+   /admin/dashboard
+     - Vérifie la présence du token (sinon redirection login)
+     - Affiche le profil connecté (superAdmin ou admin)
+     - Liste tous les admins dans un tableau
+     - Bouton "Désactiver" visible uniquement pour superAdmin
+     - Bouton "Inviter" visible uniquement pour superAdmin
+
+   /admin/invite
+     - Formulaire email + username
+     - Appelle POST /api/admin/invite
+     - Réservé au superAdmin (vérifié côté back)
+
+3. CLIENT API (lib/api.ts)
+   - Classe ApiClient avec token automatique depuis localStorage
+   - Toutes les méthodes : login, inviteAdmin, setPassword,
+     getAllAdmins, deactivateAdmin, getProfile
+   - URL configurable via NEXT_PUBLIC_API_URL
+
+4. POUR TESTER
+   1. Lancer le backend : cd back && npm run dev
+   2. Lancer le frontend : cd front && npm run dev
+   3. Aller sur http://localhost:3000/admin/login
+   4. Se connecter avec superadmin@connecteo.fr / SuperAdmin123!
+   5. Inviter un admin depuis /admin/invite
+   6. Récupérer le token depuis le mock email (console du back)
+   7. Aller sur /admin/set-password?token=xxx
+   8. Définir le mot de passe
+   9. Se connecter avec le nouvel admin depuis /admin/login
+   10. Vérifier que l'admin ne peut pas accéder à /admin/invite
