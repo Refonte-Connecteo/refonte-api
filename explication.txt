@@ -1,0 +1,47 @@
+EXPLICATION - Migration de JavaScript vers TypeScript
+====================================================
+
+1. PROBLÈME
+   - Le projet utilisait TypeScript dans la plupart des fichiers (.ts), mais
+     src/app.js et src/server.js étaient encore en JavaScript (.js).
+   - Aucun tsconfig.json n'était présent.
+   - Les dépendances TypeScript n'étaient pas installées.
+   - Les scripts dans package.json utilisaient "node" au lieu d'un exécuteur TS.
+
+2. ACTIONS EFFECTUÉES
+
+   2.1 Conversion des fichiers .js → .ts
+       - src/app.js → src/app.ts : ajout des types TypeScript (Request,
+         Response, NextFunction, Error) et suppression du fichier .js.
+       - src/server.js → src/server.ts : conversion avec typage implicite,
+         import mis à jour et suppression du fichier .js.
+
+   2.2 Création de tsconfig.json
+       - Fichier de configuration TypeScript avec :
+         * target: ES2022
+         * module: NodeNext (compatible ESM)
+         * strict: true (vérifications strictes activées)
+         * rootDir: src, outDir: dist
+         * sourceMap et declaration activés
+
+   2.3 Installation des dépendances
+       - typescript : compilateur TS (pour la vérification et la compilation)
+       - tsx : exécuteur TypeScript (remplace node pour lancer du .ts)
+       - @types/node : types Node.js
+       - @types/express : types Express.js
+
+   2.4 Mise à jour de package.json
+       - main : "src/server.js" → "src/server.ts"
+       - scripts :
+         * "start": "tsx src/server.ts" (exécution directe du TS)
+         * "dev": "tsx watch src/server.ts" (rechargement automatique)
+         * "build": "tsc" (compilation TS → JS dans dist/)
+         * "typecheck": "tsc --noEmit" (vérification sans générer de fichiers)
+
+3. FONCTIONNEMENT
+   - Pour lancer en dev : "npm run dev"
+   - Pour lancer en prod : "npm start"
+   - Pour compiler : "npm run build"
+   - Pour vérifier le typage : "npm run typecheck"
+   - tsx permet d'exécuter directement du TypeScript sans étape de
+     compilation, contrairement à ts-node ou tsc.
