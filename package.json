@@ -18,8 +18,7 @@
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^4.21.2",
-    "jsonwebtoken": "^9.0.3",
-    "resend": "^6.16.0"
+    "jsonwebtoken": "^9.0.3"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",

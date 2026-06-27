@@ -1,9 +1,7 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
-import crypto from "crypto";
 import prisma from "../lib/prisma.js";
 import { env } from "../config/env.config.js";
-import { sendInvitationEmail } from "./email.service.js";
 import {
   NotFoundError,
   UnauthorizedError,
@@ -50,9 +48,6 @@ export async function inviteAdmin(email: string, username: string): Promise<Safe
     throw new ConflictError("Ce nom d'utilisateur est déjà pris");
   }
 
-  const token = crypto.randomUUID();
-  const expires = new Date(Date.now() + env.INVITATION_TOKEN_EXPIRES_HOURS * 60 * 60 * 1000);
-
   const user = await prisma.user.create({
     data: {
       email,
@@ -60,30 +55,51 @@ export async function inviteAdmin(email: string, username: string): Promise<Safe
       password_hash: null,
       user_type_id: 2,
       is_active: false,
-      invitation_token: token,
-      invitation_token_expires: expires,
     },
   }) as unknown as UserResult;
-
-  await sendInvitationEmail(email, token);
 
   return toSafeUser(user);
 }
 
-export async function setPassword(token: string, password: string): Promise<SafeUser> {
+export async function checkPendingAdmin(email: string): Promise<SafeUser> {
+  const user = await prisma.user.findUnique({
+    where: { email },
+  }) as unknown as UserResult | null;
+
+  if (!user) {
+    throw new NotFoundError("Aucun compte trouvé avec cet email");
+  }
+
+  if (user.user_type_id !== 2) {
+    throw new BadRequestError("Cet email ne correspond pas à un administrateur");
+  }
+
+  if (user.is_active) {
+    throw new BadRequestError("Ce compte est déjà actif. Veuillez vous connecter.");
+  }
+
+  if (user.password_hash) {
+    throw new BadRequestError("Ce compte a déjà un mot de passe. Veuillez vous connecter.");
+  }
+
+  return toSafeUser(user);
+}
+
+export async function setPassword(email: string, password: string): Promise<SafeUser> {
   if (password.length < 8) {
     throw new BadRequestError("Le mot de passe doit contenir au moins 8 caractères");
   }
 
-  const user = await prisma.user.findFirst({
-    where: {
-      invitation_token: token,
-      invitation_token_expires: { gte: new Date() },
-    },
+  const user = await prisma.user.findUnique({
+    where: { email },
   }) as unknown as UserResult | null;
 
   if (!user) {
-    throw new BadRequestError("Token d'invitation invalide ou expiré");
+    throw new NotFoundError("Aucun compte trouvé avec cet email");
+  }
+
+  if (user.password_hash) {
+    throw new BadRequestError("Ce compte a déjà un mot de passe");
   }
 
   const hashedPassword = await bcrypt.hash(password, BCRYPT_ROUNDS);
@@ -92,8 +108,6 @@ export async function setPassword(token: string, password: string): Promise<Safe
     where: { id: user.id },
     data: {
       password_hash: hashedPassword,
-      invitation_token: null,
-      invitation_token_expires: null,
       is_active: true,
     },
   }) as unknown as UserResult;
@@ -161,6 +175,20 @@ export async function deactivateAdmin(adminId: number): Promise<SafeUser> {
   }) as unknown as UserResult;
 
   return toSafeUser(updated);
+}
+
+export async function deleteAdmin(adminId: number): Promise<void> {
+  const user = await prisma.user.findUnique({ where: { id: adminId } }) as unknown as UserResult | null;
+
+  if (!user) {
+    throw new NotFoundError("Administrateur");
+  }
+
+  if (user.user_type_id !== 2) {
+    throw new BadRequestError("Seuls les administrateurs peuvent être supprimés");
+  }
+
+  await prisma.user.delete({ where: { id: adminId } });
 }
 
 export async function getProfile(userId: number): Promise<SafeUser> {
