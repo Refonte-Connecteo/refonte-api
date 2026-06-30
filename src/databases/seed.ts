@@ -6,7 +6,7 @@ const adapter = new PrismaPg({ connectionString: envConfig.dbConfig.databaseUrl 
 const prisma = new PrismaClient({ adapter });
 
 async function main() {
-  await prisma.user_type.createMany({
+  await prisma.userType.createMany({
     data: [
       { type: 'admin' },
       { type: 'editor' },

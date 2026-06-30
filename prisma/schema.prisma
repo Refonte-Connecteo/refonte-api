@@ -7,21 +7,27 @@ datasource db {
   provider = "postgresql"
 }
 
-/// Admin users
-model user_type {
-  id    Int     @id @default(autoincrement())
-  type  String  @unique
-  users user[]
+/// Admin user types (roles)
+model UserType {
+  id    Int    @id @default(autoincrement())
+  type  String @unique
+  users User[]
+
+  @@map("user_type")
 }
 
-model user {
-  id           Int       @id @default(autoincrement())
-  email        String    @unique
-  username     String    @unique
+/// Admin users — stateful JWT auth (refresh_token stored in DB)
+model User {
+  id            Int       @id @default(autoincrement())
+  email         String    @unique
+  username      String    @unique
   password_hash String
-  user_type_id Int
-  created_at   DateTime  @default(now())
-  user_type    user_type @relation(fields: [user_type_id], references: [id])
+  user_type_id  Int
+  refresh_token String?   @db.Text
+  created_at    DateTime  @default(now())
+  user_type     UserType  @relation(fields: [user_type_id], references: [id])
+
+  @@map("user")
 }
 
 /// S1 — Hero carousel
@@ -147,6 +153,35 @@ model event_image {
   caption   String?
   position  Int    @default(0)
   event     event  @relation(fields: [event_id], references: [id], onDelete: Cascade)
+}
+
+/// S3 — Services with optional PDF catalogue on S3
+model Service {
+  id          Int      @id @default(autoincrement())
+  title       String
+  description String?
+  icon        String?
+  file_url    String?
+  position    Int      @default(0)
+  is_active   Boolean  @default(true)
+  created_at  DateTime @default(now())
+  sectors     Sector[]
+
+  @@map("service")
+}
+
+/// S3 — Sectors linked to a Service
+model Sector {
+  id          Int     @id @default(autoincrement())
+  title       String
+  description String?
+  icon        String?
+  service_id  Int
+  position    Int     @default(0)
+  is_active   Boolean @default(true)
+  service     Service @relation(fields: [service_id], references: [id], onDelete: Cascade)
+
+  @@map("sector")
 }
 
 /// S7 — Contact form

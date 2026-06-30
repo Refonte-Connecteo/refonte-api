@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { envConfig } from '@/config/env.config';
+import type { AdminPayload } from '@/types/express';
 import { UnauthorizedError } from '@/errors/index';
 import { asyncHandler } from '@/lib/async-handler';
 
@@ -32,5 +33,21 @@ export const authenticate = asyncHandler(async (req: Request, res: Response, nex
         next();
     } catch {
         throw new UnauthorizedError('Token invalide ou expiré');
+    }
+});
+
+export const authenticateAdmin = asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
+    const token = req.cookies.access_token;
+
+    if (!token) {
+        throw new UnauthorizedError('Accès refusé. Aucun token fourni.');
+    }
+
+    try {
+        const payload = jwt.verify(token, envConfig.serverConfig.jwtAccessSecret) as AdminPayload;
+        req.admin = payload;
+        next();
+    } catch {
+        throw new UnauthorizedError('Session expirée ou token invalide.');
     }
 });
