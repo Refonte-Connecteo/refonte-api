@@ -31,7 +31,7 @@ export async function getHeroSlideById (id: number): Promise<hero_slide>
     return slide;
 }
 
-export async function creatHeroSlide(data: HeroSlideInput): Promise<hero_slide>
+export async function createHeroSlide(data: HeroSlideInput): Promise<hero_slide>
 {
     if (!data.image_url) {
         throw new BadRequestError("Image URL is required");
