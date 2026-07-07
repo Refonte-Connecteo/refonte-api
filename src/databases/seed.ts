@@ -19,10 +19,13 @@ async function main() {
   const hashedPassword = await bcrypt.hash("SuperAdmin123!", 12);
 
   await prisma.user.upsert({
-    where: { email: "superadmin@connecteo.fr" },
-    update: {},
+    where: { username: "superadmin" },
+    update: {
+      email: "superadmin@connecteo.mg",
+      password_hash: hashedPassword,
+    },
     create: {
-      email: "superadmin@connecteo.fr",
+      email: "superadmin@connecteo.mg",
       username: "superadmin",
       password_hash: hashedPassword,
       user_type_id: 1,
@@ -31,7 +34,7 @@ async function main() {
   });
 
   console.log("Seed completed successfully");
-  console.log("SuperAdmin credentials: superadmin@connecteo.fr / SuperAdmin123!");
+  console.log("SuperAdmin credentials: superadmin@connecteo.mg / SuperAdmin123!");
 }
 
 main()
