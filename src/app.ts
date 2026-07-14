@@ -1,7 +1,9 @@
 import "dotenv/config";
 import express, { Request, Response, NextFunction } from "express";
 import cors from "cors";
+import path from "path";
 import routes from "./routes/index.js";
+import uploadRoutes from "./routes/upload.routes.js";
 import { AppError } from "./errors/index.js";
 
 const app = express();
@@ -17,7 +19,9 @@ app.get("/health", (_req: Request, res: Response) => {
   res.json({ status: "ok" });
 });
 
+app.use("/uploads", express.static(path.resolve("uploads")));
 app.use("/api", routes);
+app.use("/api/upload", uploadRoutes);
 
 app.use((_req: Request, res: Response) => {
   res.status(404).json({ error: "Route introuvable" });
