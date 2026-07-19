@@ -36,7 +36,8 @@ export const handleGetCeoMessage = asyncHandler(async (req: Request, res: Respon
 });
 
 export const handleCreateCeoMessage = asyncHandler(async (req: Request, res: Response) => {
-  const { title, description, image_url } = req.body;
+  const { title, description } = req.body;
+  const image_url = req.file ? `/uploads/${req.file.filename}` : req.body.image_url;
 
   const message = await createCeoMessage({ title, description, image_url });
 
@@ -45,7 +46,11 @@ export const handleCreateCeoMessage = asyncHandler(async (req: Request, res: Res
 
 export const handleUpdateCeoMessage = asyncHandler(async (req: Request, res: Response) => {
   const id = parseId(req.params.id as string);
-  const message = await updateCeoMessage(id, req.body);
+  const data = { ...req.body };
+  if (req.file) {
+    data.image_url = `/uploads/${req.file.filename}`;
+  }
+  const message = await updateCeoMessage(id, data);
   res.json({ message: "Message CEO mis à jour avec succès", data: message });
 });
 

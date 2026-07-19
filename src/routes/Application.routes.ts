@@ -13,8 +13,9 @@ const router = Router();
 
 // Public routes (affichage front - candidature publique)
 router.get("/", handleGetAllApplications);
-router.get("/:id", handleGetApplication);
 router.get("/job/:jobId", handleGetApplicationsByJobId);
+router.get("/:id", handleGetApplication);
+router.post("/", handleCreateApplication);
 
 // Admin only routes
 router.put("/:id", authenticate, requireAdmin, handleUpdateApplication);

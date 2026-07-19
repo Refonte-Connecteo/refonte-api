@@ -11,7 +11,7 @@ import {
   BadRequestError,
 } from "../errors/index.js";
 
-export type CeoMessageInput = Omit<Prisma.ceo_messageCreateInput, "id" | "update_at">;
+export type CeoMessageInput = Omit<Prisma.ceo_messageCreateInput, "id" | "updated_at">;
 
 export async function getAllCeoMessages(): Promise<ceo_message[]>
 {

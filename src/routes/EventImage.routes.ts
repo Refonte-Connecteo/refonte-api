@@ -13,8 +13,8 @@ const router = Router();
 
 // Public routes (affichage front)
 router.get("/", handleGetAllEventImages);
-router.get("/:id", handleGetEventImage);
 router.get("/event/:eventId", handleGetEventImagesByEventId);
+router.get("/:id", handleGetEventImage);
 
 // Admin only routes
 router.post("/", authenticate, requireAdmin, handleCreateEventImage);

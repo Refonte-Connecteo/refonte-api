@@ -23,7 +23,7 @@ const fileFilter = (
   file: Express.Multer.File,
   cb: multer.FileFilterCallback
 ) => {
-  const allowed = [".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg"];
+  const allowed = [".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg", ".pdf", ".doc", ".docx"];
   const ext = path.extname(file.originalname).toLowerCase();
   if (allowed.includes(ext)) {
     cb(null, true);
