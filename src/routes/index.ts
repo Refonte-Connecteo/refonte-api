@@ -4,6 +4,8 @@ import {
   handleInviteAdmin,
   handleSetPassword,
   handleLogin,
+  handleConfirmMfaSetup,
+  handleVerifyMfa,
   handleGetAllAdmins,
   handleDeactivateAdmin,
   handleDeleteAdmin,
@@ -29,6 +31,15 @@ const router = Router();
 router.post("/admin/login", handleLogin);
 router.post("/admin/set-password", handleSetPassword);
 router.post("/admin/check-pending", handleCheckPending);
+
+// Auth routes (MFA onboarding + verification)
+router.post("/auth/login", handleLogin);
+router.post("/auth/mfa/confirm-setup", handleConfirmMfaSetup);
+router.post("/auth/mfa/verify", handleVerifyMfa);
+
+// Admin aliases for the MFA endpoints
+router.post("/admin/mfa/confirm-setup", handleConfirmMfaSetup);
+router.post("/admin/mfa/verify", handleVerifyMfa);
 
 // SuperAdmin only routes
 router.post("/admin/invite", authenticate, requireSuperAdmin, handleInviteAdmin);

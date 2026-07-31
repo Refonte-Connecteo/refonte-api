@@ -22,10 +22,18 @@ export function authenticate(req: Request, _res: Response, next: NextFunction): 
   const token = header.split(" ")[1];
 
   try {
-    const decoded = jwt.verify(token, env.JWT_SECRET) as JwtPayload;
+    const decoded = jwt.verify(token, env.JWT_SECRET) as JwtPayload & { isMfaPending?: boolean };
+
+    if (decoded.isMfaPending) {
+      throw new UnauthorizedError("Le MFA doit être validé pour accéder à cette ressource");
+    }
+
     req.user = decoded;
     next();
-  } catch {
+  } catch (err) {
+    if (err instanceof UnauthorizedError) {
+      throw err;
+    }
     throw new UnauthorizedError("Token invalide ou expiré");
   }
 }
