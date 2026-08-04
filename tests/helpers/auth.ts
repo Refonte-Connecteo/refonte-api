@@ -8,8 +8,23 @@ import { generateTotpCode } from "../../src/services/mfa.service.js";
 
 export const api = request(app);
 
-export function signToken(userId: number, userTypeId: number, email: string): string {
-  return jwt.sign({ userId, userTypeId, email }, env.JWT_SECRET, { expiresIn: "1h" });
+export function signToken(
+  userId: number,
+  userTypeId: number,
+  email: string,
+  options: { tokenVersion?: number; tokenType?: "access" | "refresh" } = {},
+): string {
+  return jwt.sign(
+    {
+      userId,
+      userTypeId,
+      email,
+      tokenVersion: options.tokenVersion ?? 0,
+      tokenType: options.tokenType ?? "access",
+    },
+    env.JWT_SECRET,
+    { expiresIn: "1h" },
+  );
 }
 
 export interface CreateUserOptions {
@@ -56,5 +71,6 @@ export async function totpCodeFor(userId: number): Promise<string> {
 }
 
 export async function resetDatabase(): Promise<void> {
+  await prisma.revoked_token.deleteMany();
   await prisma.user.deleteMany();
 }

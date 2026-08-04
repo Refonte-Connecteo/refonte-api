@@ -32,7 +32,17 @@ model user {
   mfa_secret               String?
   mfa_enabled              Boolean   @default(false)
   mfa_recovery_codes       String[]  @default([])
+  token_version            Int       @default(0)
   user_type                user_type @relation(fields: [user_type_id], references: [id])
+}
+
+/// JWT révoqués (blacklist) — un token inscrit ici ne peut plus être utilisé côté serveur
+model revoked_token {
+  id         Int      @id @default(autoincrement())
+  token_hash String   @unique
+  user_id    Int?
+  expires_at DateTime
+  created_at DateTime @default(now())
 }
 
 /// S1 — Hero carousel

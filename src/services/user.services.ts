@@ -16,6 +16,14 @@ import {
   isValidTotpCode,
   MFA_TOKEN_TTL,
 } from "./mfa.service.js";
+import {
+  signAccessToken,
+  signRefreshToken,
+  revokeToken,
+  revokeAllTokensForUser,
+  verifyRefreshToken,
+  type RefreshTokenPayload,
+} from "./token.service.js";
 
 const BCRYPT_ROUNDS = 12;
 
@@ -31,6 +39,7 @@ export interface UserResult {
   mfa_secret: string | null;
   mfa_enabled: boolean;
   mfa_recovery_codes: string[];
+  token_version: number;
   created_at: Date;
 }
 
@@ -52,12 +61,27 @@ export interface MfaSetupResult {
 export type LoginResult =
   | { status: "mfa"; requireMfa: true; mfaToken: string; userId: number }
   | (MfaSetupResult & { status: "mfa-setup" })
-  | { status: "success"; requireMfa: false; user: SafeUser; token: string };
+  | { status: "success"; requireMfa: false; user: SafeUser; token: string; refreshToken: string };
 
 export type JwtPayload = {
   userId: number;
   userTypeId: number;
   email: string;
+  tokenVersion: number;
+  tokenType: "access" | "refresh";
+};
+
+export type TokenSubject = {
+  id: number;
+  user_type_id: number;
+  email: string;
+  token_version: number;
+};
+
+export type AuthResult = {
+  user: SafeUser;
+  token: string;
+  refreshToken: string;
 };
 
 export type MfaTokenPayload = {
@@ -70,26 +94,21 @@ function toSafeUser(u: UserResult): SafeUser {
   return safe;
 }
 
-function signAccessToken(user: UserResult): string {
-  const jwtPayload: JwtPayload = {
-    userId: user.id,
-    userTypeId: user.user_type_id,
-    email: user.email,
-  };
-
-  return jwt.sign(jwtPayload, env.JWT_SECRET, { expiresIn: env.JWT_EXPIRES_IN as jwt.SignOptions["expiresIn"] });
-}
-
 function signMfaToken(userId: number): string {
   const payload: MfaTokenPayload = { userId, isMfaPending: true };
-  return jwt.sign(payload, env.JWT_SECRET, { expiresIn: MFA_TOKEN_TTL });
+  return jwt.sign(payload, env.JWT_SECRET, {
+    algorithm: env.JWT_ALGORITHM,
+    expiresIn: MFA_TOKEN_TTL,
+  });
 }
 
 function extractMfaPendingUserId(token: string): number {
   let decoded: Partial<MfaTokenPayload>;
 
   try {
-    decoded = jwt.verify(token, env.JWT_SECRET) as Partial<MfaTokenPayload>;
+    decoded = jwt.verify(token, env.JWT_SECRET, {
+      algorithms: [env.JWT_ALGORITHM],
+    }) as unknown as Partial<MfaTokenPayload>;
   } catch {
     throw new UnauthorizedError("Token MFA invalide ou expiré");
   }
@@ -248,7 +267,7 @@ export async function login(email: string, password: string): Promise<LoginResul
   };
 }
 
-export async function confirmMfaSetup(mfaToken: string, code: string): Promise<{ user: SafeUser; token: string }> {
+export async function confirmMfaSetup(mfaToken: string, code: string): Promise<AuthResult> {
   const userId = extractMfaPendingUserId(mfaToken);
 
   const user = await prisma.user.findUnique({
@@ -276,10 +295,14 @@ export async function confirmMfaSetup(mfaToken: string, code: string): Promise<{
     data: { mfa_enabled: true },
   }) as unknown as UserResult;
 
-  return { user: toSafeUser(updated), token: signAccessToken(updated) };
+  return {
+    user: toSafeUser(updated),
+    token: signAccessToken(updated),
+    refreshToken: signRefreshToken(updated),
+  };
 }
 
-export async function verifyMfa(mfaToken: string, code: string): Promise<{ user: SafeUser; token: string }> {
+export async function verifyMfa(mfaToken: string, code: string): Promise<AuthResult> {
   const userId = extractMfaPendingUserId(mfaToken);
 
   const user = await prisma.user.findUnique({
@@ -298,7 +321,7 @@ export async function verifyMfa(mfaToken: string, code: string): Promise<{ user:
     throw new UnauthorizedError("Code de vérification invalide");
   }
 
-  return { user: toSafeUser(user), token: signAccessToken(user) };
+  return { user: toSafeUser(user), token: signAccessToken(user), refreshToken: signRefreshToken(user) };
 }
 
 export async function getAllAdmins(): Promise<SafeUser[]> {
@@ -354,4 +377,74 @@ export async function getProfile(userId: number): Promise<SafeUser> {
   }
 
   return toSafeUser(user);
+}
+
+export async function changePassword(userId: number, newPassword: string): Promise<void> {
+  if (newPassword.length < 8) {
+    throw new BadRequestError("Le mot de passe doit contenir au moins 8 caractères");
+  }
+
+  const user = await prisma.user.findUnique({ where: { id: userId } }) as unknown as UserResult | null;
+
+  if (!user) {
+    throw new NotFoundError("Utilisateur");
+  }
+
+  const hashedPassword = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
+
+  await prisma.user.update({
+    where: { id: userId },
+    data: { password_hash: hashedPassword },
+  });
+
+  await revokeAllTokensForUser(userId);
+}
+
+export async function disableMfa(userId: number): Promise<SafeUser> {
+  const user = await prisma.user.findUnique({ where: { id: userId } }) as unknown as UserResult | null;
+
+  if (!user) {
+    throw new NotFoundError("Utilisateur");
+  }
+
+  if (!user.mfa_enabled) {
+    throw new BadRequestError("Le MFA n'est pas activé sur ce compte");
+  }
+
+  const updated = await prisma.user.update({
+    where: { id: userId },
+    data: {
+      mfa_secret: null,
+      mfa_enabled: false,
+      mfa_recovery_codes: [],
+    },
+  }) as unknown as UserResult;
+
+  await revokeAllTokensForUser(userId);
+
+  return toSafeUser(updated);
+}
+
+export async function logout(userId: number, token: string): Promise<void> {
+  await revokeToken(token, userId);
+}
+
+export async function refreshAccessToken(refreshToken: string): Promise<{ token: string; refreshToken: string }> {
+  const decoded: RefreshTokenPayload = await verifyRefreshToken(refreshToken);
+
+  const user = await prisma.user.findUnique({
+    where: { id: decoded.userId },
+  }) as unknown as UserResult | null;
+
+  if (!user || !user.is_active) {
+    throw new UnauthorizedError("Compte inactif ou introuvable");
+  }
+
+  if (user.token_version !== decoded.tokenVersion) {
+    throw new UnauthorizedError("Token de rafraîchissement révoqué");
+  }
+
+  await revokeToken(refreshToken, user.id);
+
+  return { token: signAccessToken(user), refreshToken: signRefreshToken(user) };
 }

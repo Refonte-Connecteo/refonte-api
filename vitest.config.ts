@@ -12,6 +12,8 @@ export default defineConfig({
     env: {
       DATABASE_URL: TEST_DATABASE_URL,
       TEST_DATABASE_URL,
+      ENCRYPTION_KEY:
+        "f03f219f47271d43fcbd96e03c2f00e31005a63717a11eb252882d829205555b",
     },
   },
 });

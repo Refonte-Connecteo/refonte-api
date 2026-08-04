@@ -10,9 +10,19 @@ import {
   checkPendingAdmin,
   confirmMfaSetup,
   verifyMfa,
+  changePassword,
+  disableMfa,
+  logout,
+  refreshAccessToken,
 } from "../services/user.services.js";
 import { isSixDigitCode } from "../services/mfa.service.js";
 import { asyncHandler } from "../middlewares/auth.middleware.js";
+import { revokeToken } from "../services/token.service.js";
+import {
+  REFRESH_TOKEN_COOKIE,
+  setRefreshTokenCookie,
+  clearRefreshTokenCookie,
+} from "../utils/cookies.js";
 
 export const handleInviteAdmin = asyncHandler(async (req: Request, res: Response) => {
   const { email, username } = req.body;
@@ -75,7 +85,8 @@ export const handleLogin = asyncHandler(async (req: Request, res: Response) => {
     return;
   }
 
-  res.json({ message: "Connexion réussie", user: result.user, token: result.token });
+  setRefreshTokenCookie(res, result.refreshToken);
+  res.json({ message: "Connexion réussie", user: result.user, token: result.token, refreshToken: result.refreshToken });
 });
 
 export const handleConfirmMfaSetup = asyncHandler(async (req: Request, res: Response) => {
@@ -87,7 +98,13 @@ export const handleConfirmMfaSetup = asyncHandler(async (req: Request, res: Resp
   }
 
   const result = await confirmMfaSetup(mfaToken, code);
-  res.json({ message: "MFA activé avec succès", user: result.user, token: result.token });
+  setRefreshTokenCookie(res, result.refreshToken);
+  res.json({
+    message: "MFA activé avec succès",
+    user: result.user,
+    token: result.token,
+    refreshToken: result.refreshToken,
+  });
 });
 
 export const handleVerifyMfa = asyncHandler(async (req: Request, res: Response) => {
@@ -99,7 +116,81 @@ export const handleVerifyMfa = asyncHandler(async (req: Request, res: Response) 
   }
 
   const result = await verifyMfa(mfaToken, code);
-  res.json({ message: "Connexion réussie", user: result.user, token: result.token });
+  setRefreshTokenCookie(res, result.refreshToken);
+  res.json({
+    message: "Connexion réussie",
+    user: result.user,
+    token: result.token,
+    refreshToken: result.refreshToken,
+  });
+});
+
+export const handleRefresh = asyncHandler(async (req: Request, res: Response) => {
+  const bodyToken = (req.body ?? {}).refreshToken;
+  const cookieToken = (req.cookies ?? {})[REFRESH_TOKEN_COOKIE] as string | undefined;
+
+  const refreshToken =
+    typeof bodyToken === "string" && bodyToken.trim() !== "" ? bodyToken : cookieToken;
+
+  if (typeof refreshToken !== "string" || !refreshToken) {
+    res.status(400).json({ error: "refreshToken requis" });
+    return;
+  }
+
+  const result = await refreshAccessToken(refreshToken);
+  setRefreshTokenCookie(res, result.refreshToken);
+  res.json(result);
+});
+
+export const handleLogout = asyncHandler(async (req: Request, res: Response) => {
+  const header = req.headers.authorization;
+
+  if (!req.user) {
+    res.status(401).json({ error: "Non authentifié" });
+    return;
+  }
+
+  if (!header || !header.startsWith("Bearer ")) {
+    res.status(400).json({ error: "Token manquant ou invalide" });
+    return;
+  }
+
+  await logout(req.user.userId, header.split(" ")[1]);
+
+  const cookieToken = (req.cookies ?? {})[REFRESH_TOKEN_COOKIE] as string | undefined;
+  if (typeof cookieToken === "string" && cookieToken) {
+    await revokeToken(cookieToken, req.user.userId);
+  }
+
+  clearRefreshTokenCookie(res);
+  res.json({ message: "Déconnexion réussie" });
+});
+
+export const handleChangePassword = asyncHandler(async (req: Request, res: Response) => {
+  if (!req.user) {
+    res.status(401).json({ error: "Non authentifié" });
+    return;
+  }
+
+  const { newPassword } = req.body ?? {};
+
+  if (typeof newPassword !== "string" || !newPassword) {
+    res.status(400).json({ error: "newPassword est requis" });
+    return;
+  }
+
+  await changePassword(req.user.userId, newPassword);
+  res.json({ message: "Mot de passe modifié avec succès. Vous devez vous reconnecter." });
+});
+
+export const handleDisableMfa = asyncHandler(async (req: Request, res: Response) => {
+  if (!req.user) {
+    res.status(401).json({ error: "Non authentifié" });
+    return;
+  }
+
+  const user = await disableMfa(req.user.userId);
+  res.json({ message: "MFA désactivé avec succès", user });
 });
 
 export const handleGetAllAdmins = asyncHandler(async (_req: Request, res: Response) => {

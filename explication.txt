@@ -84,8 +84,8 @@ GESTION DES ADMINISTRATEURS (superAdmin / admin)
 
        src/config/env.config.ts
          - Validation et export des variables d'environnement :
-           PORT, DATABASE_URL, JWT_SECRET, JWT_EXPIRES_IN,
-           RESEND_API_KEY, FRONTEND_URL, INVITATION_TOKEN_EXPIRES_HOURS
+            PORT, DATABASE_URL, JWT_SECRET, JWT_ACCESS_EXPIRES_IN,
+            JWT_REFRESH_EXPIRES_IN, RESEND_API_KEY, FRONTEND_URL, INVITATION_TOKEN_EXPIRES_HOURS
 
        src/errors/index.ts
          - Classes d'erreurs : AppError, NotFoundError, UnauthorizedError,
@@ -128,7 +128,8 @@ GESTION DES ADMINISTRATEURS (superAdmin / admin)
 
    2.4 Variables d'environnement ajoutées (.env)
        - JWT_SECRET
-       - JWT_EXPIRES_IN (défaut: 7d)
+       - JWT_ACCESS_EXPIRES_IN (défaut: 5m)
+       - JWT_REFRESH_EXPIRES_IN (défaut: 7d)
        - RESEND_API_KEY
        - FRONTEND_URL (défaut: http://localhost:5173)
        - INVITATION_TOKEN_EXPIRES_HOURS (défaut: 24)
