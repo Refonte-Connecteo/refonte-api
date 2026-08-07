@@ -46,7 +46,8 @@ export const handleCreateJobPosting = asyncHandler(async (req: Request, res: Res
  
 export const handleUpdateJobPosting = asyncHandler(async (req: Request, res: Response) => {
   const id = parseId(req.params.id as string);
-  const jobPosting = await updateJobPosting(id, req.body);
+  const { title, contract_type, description, external_url, fiche_url, is_active } = req.body;
+  const jobPosting = await updateJobPosting(id, { title, contract_type, description, external_url, fiche_url, is_active });
   res.json({ message: "Offre d'emploi mise à jour avec succès", jobPosting });
 });
  

@@ -50,7 +50,8 @@ export const handleCreateEventImage = asyncHandler(async (req: Request, res: Res
  
 export const handleUpdateEventImage = asyncHandler(async (req: Request, res: Response) => {
   const id = parseId(req.params.id as string);
-  const eventImage = await updateEventImage(id, req.body);
+  const { image_url, caption, position } = req.body;
+  const eventImage = await updateEventImage(id, { image_url, caption, position });
   res.json({ message: "Image d'événement mise à jour avec succès", eventImage });
 });
  

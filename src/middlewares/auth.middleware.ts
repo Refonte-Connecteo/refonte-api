@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 import { env } from "../config/env.config.js";
+import { logger } from "../lib/logger.js";
 import { UnauthorizedError, ForbiddenError } from "../errors/index.js";
 import type { JwtPayload } from "../services/user.services.js";
 
@@ -16,6 +17,7 @@ export function authenticate(req: Request, _res: Response, next: NextFunction): 
   const header = req.headers.authorization;
 
   if (!header || !header.startsWith("Bearer ")) {
+    logger.warn({ ip: req.ip }, "Tentative d'accès sans token");
     throw new UnauthorizedError("Token manquant ou invalide");
   }
 
@@ -26,6 +28,7 @@ export function authenticate(req: Request, _res: Response, next: NextFunction): 
     req.user = decoded;
     next();
   } catch {
+    logger.warn({ ip: req.ip }, "Tentative d'accès avec token invalide");
     throw new UnauthorizedError("Token invalide ou expiré");
   }
 }

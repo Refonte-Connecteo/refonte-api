@@ -39,7 +39,8 @@ export const handleCreateKpiStat = asyncHandler(async (req: Request, res: Respon
 
 export const handleUpdateKpiStat = asyncHandler(async (req: Request, res: Response) => {
   const id = parseId(req.params.id as string);
-  const stat = await updateKpiStat(id, req.body);
+  const { label, value, unit, position, is_active } = req.body;
+  const stat = await updateKpiStat(id, { label, value, unit, position, is_active });
   res.json({ message: "KPI mis à jour avec succès", stat });
 });
 

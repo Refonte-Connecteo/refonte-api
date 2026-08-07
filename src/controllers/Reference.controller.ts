@@ -45,7 +45,8 @@ export const handleCreateReference = asyncHandler(async (req: Request, res: Resp
  
 export const handleUpdateReference = asyncHandler(async (req: Request, res: Response) => {
   const id = parseId(req.params.id as string);
-  const reference = await updateReference(id, req.body);
+  const { label, image_url, website_url, position, is_active } = req.body;
+  const reference = await updateReference(id, { label, image_url, website_url, position, is_active });
   res.json({ message: "Référence mise à jour avec succès", reference });
 });
  

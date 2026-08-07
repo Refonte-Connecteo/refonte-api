@@ -45,7 +45,8 @@ export const handleCreateSpontaneousApplication = asyncHandler(async (req: Reque
  
 export const handleUpdateSpontaneousApplication = asyncHandler(async (req: Request, res: Response) => {
   const id = parseId(req.params.id as string);
-  const spontaneousApplication = await updateSpontaneousApplication(id, req.body);
+  const { first_name, last_name, email, phone, cv_url, motivation } = req.body;
+  const spontaneousApplication = await updateSpontaneousApplication(id, { first_name, last_name, email, phone, cv_url, motivation });
   res.json({ message: "Candidature spontanée mise à jour avec succès", spontaneousApplication });
 });
  

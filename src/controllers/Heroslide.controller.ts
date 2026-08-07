@@ -48,11 +48,9 @@ export const handleCreateHeroSlide = asyncHandler(async (req: Request, res: Resp
  
 export const handleUpdateHeroSlide = asyncHandler(async (req: Request, res: Response) => {
   const id = parseId(req.params.id as string);
-  const data = { ...req.body };
-  if (req.file) {
-    data.image_url = `/uploads/${req.file.filename}`;
-  }
-  const slide = await updateHeroSlide(id, data);
+  const { title, description, cta_label, cta_url, position, is_active } = req.body;
+  const image_url = req.file ? `/uploads/${req.file.filename}` : req.body.image_url;
+  const slide = await updateHeroSlide(id, { title, description, cta_label, cta_url, position, is_active, image_url });
   res.json({ message: "Slide mis à jour avec succès", slide });
 });
  

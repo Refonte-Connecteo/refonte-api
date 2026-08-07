@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { authenticate, requireSuperAdmin } from "../middlewares/auth.middleware.js";
+import { authLimiter } from "../middlewares/rateLimit.js";
 import {
   handleInviteAdmin,
   handleSetPassword,
@@ -9,6 +10,7 @@ import {
   handleDeleteAdmin,
   handleGetProfile,
   handleCheckPending,
+  handleLogout,
 } from "../controllers/user.controller.js";
 import ceoMessageRouter from "./Ceomessage.routes.js";
 import heroSlideRouter from "./HeroSlide.routes.js";
@@ -25,10 +27,10 @@ import contactMessageRouter from "./ContactMessage.routes.js";
 
 const router = Router();
 
-// Public routes
-router.post("/admin/login", handleLogin);
-router.post("/admin/set-password", handleSetPassword);
-router.post("/admin/check-pending", handleCheckPending);
+// Public routes (rate limited)
+router.post("/admin/login", authLimiter, handleLogin);
+router.post("/admin/set-password", authLimiter, handleSetPassword);
+router.post("/admin/check-pending", authLimiter, handleCheckPending);
 
 // SuperAdmin only routes
 router.post("/admin/invite", authenticate, requireSuperAdmin, handleInviteAdmin);
@@ -38,6 +40,7 @@ router.delete("/admin/:id", authenticate, requireSuperAdmin, handleDeleteAdmin);
 
 // Authenticated user routes
 router.get("/admin/me", authenticate, handleGetProfile);
+router.post("/admin/logout", authenticate, handleLogout);
 
 // Content management routes
 router.use("/ceomessage", ceoMessageRouter);

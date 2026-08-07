@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { authenticate, requireAdmin } from "../middlewares/auth.middleware.js";
+import { validate } from "../middlewares/validate.js";
 import {
   handleGetAllContactMessages,
   handleGetContactMessage,
@@ -7,11 +8,12 @@ import {
   handleMarkAsRead,
   handleDeleteContactMessage,
 } from "../controllers/ContactMessage.controller.js";
+import { contactMessageCreateSchema } from "../validations/contactmessage.schema.js";
 
 const router = Router();
 
 // Public route - contact form submission
-router.post("/", handleCreateContactMessage);
+router.post("/", validate(contactMessageCreateSchema), handleCreateContactMessage);
 
 // Admin only routes
 router.get("/", authenticate, requireAdmin, handleGetAllContactMessages);

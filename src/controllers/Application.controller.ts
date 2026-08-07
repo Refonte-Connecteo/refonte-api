@@ -53,7 +53,8 @@ export const handleCreateApplication = asyncHandler(async (req: Request, res: Re
  
 export const handleUpdateApplication = asyncHandler(async (req: Request, res: Response) => {
   const id = parseId(req.params.id as string);
-  const application = await updateApplication(id, req.body);
+  const { first_name, last_name, email, phone, cv_url, cover_letter } = req.body;
+  const application = await updateApplication(id, { first_name, last_name, email, phone, cv_url, cover_letter });
   res.json({ message: "Candidature mise à jour avec succès", application });
 });
  

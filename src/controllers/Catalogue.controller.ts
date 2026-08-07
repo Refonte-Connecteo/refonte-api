@@ -42,7 +42,8 @@ export const handleCreateCatalogue = asyncHandler(async (req: Request, res: Resp
  
 export const handleUpdateCatalogue = asyncHandler(async (req: Request, res: Response) => {
   const id = parseId(req.params.id as string);
-  const catalogue = await updateCatalogue(id, req.body);
+  const { title, file_url, is_lead_magnet } = req.body;
+  const catalogue = await updateCatalogue(id, { title, file_url, is_lead_magnet });
   res.json({ message: "Catalogue mis à jour avec succès", catalogue });
 });
  

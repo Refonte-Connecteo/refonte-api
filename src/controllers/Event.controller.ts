@@ -45,7 +45,8 @@ export const handleCreateEvent = asyncHandler(async (req: Request, res: Response
  
 export const handleUpdateEvent = asyncHandler(async (req: Request, res: Response) => {
   const id = parseId(req.params.id as string);
-  const event = await updateEvent(id, req.body);
+  const { title, description, event_date, youtube_url, is_published } = req.body;
+  const event = await updateEvent(id, { title, description, event_date, youtube_url, is_published });
   res.json({ message: "Événement mis à jour avec succès", event });
 });
  

@@ -48,7 +48,8 @@ export const handleCreateArticle = asyncHandler(async (req: Request, res: Respon
  
 export const handleUpdateArticle = asyncHandler(async (req: Request, res: Response) => {
   const id = parseId(req.params.id as string);
-  const article = await updateArticle(id, req.body);
+  const { title, description, type, cover_url, file_url, is_lead_magnet, is_published, published_at } = req.body;
+  const article = await updateArticle(id, { title, description, type, cover_url, file_url, is_lead_magnet, is_published, published_at });
   res.json({ message: "Article mis à jour avec succès", article });
 });
  

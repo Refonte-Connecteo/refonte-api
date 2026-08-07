@@ -19,8 +19,8 @@ export const handleInviteAdmin = asyncHandler(async (req: Request, res: Response
     return;
   }
 
-  const user = await inviteAdmin(email, username);
-  res.status(201).json({ message: "Admin invité avec succès", user });
+  const result = await inviteAdmin(email, username);
+  res.status(201).json({ message: "Admin invité avec succès", user: result, invitation_token: result.invitation_token });
 });
 
 export const handleCheckPending = asyncHandler(async (req: Request, res: Response) => {
@@ -36,14 +36,14 @@ export const handleCheckPending = asyncHandler(async (req: Request, res: Respons
 });
 
 export const handleSetPassword = asyncHandler(async (req: Request, res: Response) => {
-  const { email, password } = req.body;
+  const { email, password, token } = req.body;
 
   if (!email || !password) {
     res.status(400).json({ error: "Email et mot de passe sont requis" });
     return;
   }
 
-  const user = await setPassword(email, password);
+  const user = await setPassword(email, password, token);
   res.json({ message: "Mot de passe défini avec succès", user });
 });
 
@@ -96,4 +96,8 @@ export const handleGetProfile = asyncHandler(async (req: Request, res: Response)
 
   const user = await getProfile(req.user.userId);
   res.json({ user });
+});
+
+export const handleLogout = asyncHandler(async (req: Request, res: Response) => {
+  res.json({ message: "Déconnexion réussie. Supprimez le token du client." });
 });

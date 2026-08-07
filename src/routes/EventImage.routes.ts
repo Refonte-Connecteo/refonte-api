@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { authenticate, requireAdmin } from "../middlewares/auth.middleware.js";
+import { validate } from "../middlewares/validate.js";
 import {
   handleGetAllEventImages,
   handleGetEventImage,
@@ -8,6 +9,7 @@ import {
   handleUpdateEventImage,
   handleDeleteEventImage,
 } from "../controllers/EventImage.controller.js";
+import { eventImageCreateSchema, eventImageUpdateSchema } from "../validations/eventimage.schema.js";
 
 const router = Router();
 
@@ -17,8 +19,8 @@ router.get("/event/:eventId", handleGetEventImagesByEventId);
 router.get("/:id", handleGetEventImage);
 
 // Admin only routes
-router.post("/", authenticate, requireAdmin, handleCreateEventImage);
-router.put("/:id", authenticate, requireAdmin, handleUpdateEventImage);
+router.post("/", authenticate, requireAdmin, validate(eventImageCreateSchema), handleCreateEventImage);
+router.put("/:id", authenticate, requireAdmin, validate(eventImageUpdateSchema), handleUpdateEventImage);
 router.delete("/:id", authenticate, requireAdmin, handleDeleteEventImage);
 
 export default router;
