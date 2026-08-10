@@ -1,6 +1,7 @@
 import { Router } from "express";
+import { body } from "express-validator";
 import { authenticate, requireAdmin } from "../middlewares/auth.middleware.js";
-import { validate } from "../middlewares/validate.js";
+import { validateRequest, stringSchema } from "../middlewares/validation.middleware.js";
 import {
   handleGetAllContactMessages,
   handleGetContactMessage,
@@ -8,12 +9,21 @@ import {
   handleMarkAsRead,
   handleDeleteContactMessage,
 } from "../controllers/ContactMessage.controller.js";
-import { contactMessageCreateSchema } from "../validations/contactmessage.schema.js";
 
 const router = Router();
 
+const createContactMessageValidation = validateRequest([
+  stringSchema("first_name", { max: 100 }),
+  stringSchema("last_name", { max: 100 }),
+  body("email").trim().isEmail().withMessage("Email invalide"),
+  stringSchema("phone", { optional: true, max: 30 }),
+  stringSchema("company", { optional: true, max: 200 }),
+  stringSchema("country", { optional: true, max: 100 }),
+  stringSchema("message", { max: 5000 }),
+]);
+
 // Public route - contact form submission
-router.post("/", validate(contactMessageCreateSchema), handleCreateContactMessage);
+router.post("/", createContactMessageValidation, handleCreateContactMessage);
 
 // Admin only routes
 router.get("/", authenticate, requireAdmin, handleGetAllContactMessages);
