@@ -5,6 +5,7 @@ import helmet from "helmet";
 import cookieParser from "cookie-parser";
 import { pinoHttp } from "pino-http";
 import path from "path";
+import multer from "multer";
 import { env } from "./config/env.config.js";
 import { logger } from "./lib/logger.js";
 import { globalLimiter } from "./middlewares/rateLimit.js";
@@ -63,9 +64,23 @@ app.get("/health", (_req: Request, res: Response) => {
   res.json({ status: "ok" });
 });
 
+const IMAGE_EXTENSIONS = [".jpg", ".jpeg", ".png", ".webp", ".gif"];
+
 app.use(
   "/uploads",
-  express.static(path.resolve("uploads"), { dotfiles: "deny", index: false }),
+  express.static(path.resolve("uploads"), {
+    dotfiles: "deny",
+    index: false,
+    setHeaders: (res, filePath) => {
+      const ext = path.extname(filePath).toLowerCase();
+      if (!IMAGE_EXTENSIONS.includes(ext)) {
+        res.setHeader(
+          "Content-Disposition",
+          `attachment; filename="${path.basename(filePath)}"`,
+        );
+      }
+    },
+  }),
 );
 
 // Rejette tout payload XSS dans body / query / params, pour toutes les routes
@@ -93,6 +108,27 @@ app.use((_req: Request, res: Response) => {
 
 app.use((err: Error, req: Request, res: Response, _next: NextFunction) => {
   const meta = buildAuditMeta(req);
+
+  if (err instanceof multer.MulterError) {
+    const uploadStatusCode = err.code === "LIMIT_FILE_SIZE" ? 413 : 400;
+    void logAuditEvent({
+      eventType: AuditEventType.FILE_UPLOAD_REJECTED,
+      action: "Upload rejeté par Multer",
+      success: false,
+      statusCode: uploadStatusCode,
+      errorCode: err.code,
+      details: { code: err.code },
+      meta,
+    });
+    res.status(uploadStatusCode).json({
+      error:
+        uploadStatusCode === 413
+          ? "Fichier trop volumineux"
+          : "Fichier invalide",
+    });
+    return;
+  }
+
   const statusCode = err instanceof AppError ? err.statusCode : 500;
 
   if (statusCode >= 500) {

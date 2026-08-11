@@ -1,7 +1,8 @@
 import { z } from "zod";
+import { storedUrlSchema } from "./storedUrl.schema.js";
 
 export const heroSlideCreateSchema = z.object({
-  image_url: z.string().max(500),
+  image_url: storedUrlSchema,
   title: z.string().max(255).optional().nullable(),
   description: z.string().max(1000).optional().nullable(),
   cta_label: z.string().max(100).optional().nullable(),

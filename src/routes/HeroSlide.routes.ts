@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { authenticate, requireAdmin } from "../middlewares/auth.middleware.js";
-import { upload } from "../middlewares/upload.js";
+import { uploadImage, processUploadedFile, persistLocalFile } from "../middlewares/upload.js";
+import { IMAGE_FILE_KINDS } from "../utils/fileType.js";
 import { validate } from "../middlewares/validate.js";
 import {
   handleGetAllHeroSlides,
@@ -18,8 +19,8 @@ router.get("/", handleGetAllHeroSlides);
 router.get("/:id", handleGetHeroSlide);
 
 // Admin only routes
-router.post("/", authenticate, requireAdmin, upload.single("image"), validate(heroSlideCreateSchema), handleCreateHeroSlide);
-router.put("/:id", authenticate, requireAdmin, upload.single("image"), validate(heroSlideUpdateSchema), handleUpdateHeroSlide);
+router.post("/", authenticate, requireAdmin, uploadImage.single("image"), processUploadedFile(IMAGE_FILE_KINDS), validate(heroSlideCreateSchema), persistLocalFile, handleCreateHeroSlide);
+router.put("/:id", authenticate, requireAdmin, uploadImage.single("image"), processUploadedFile(IMAGE_FILE_KINDS), validate(heroSlideUpdateSchema), persistLocalFile, handleUpdateHeroSlide);
 router.delete("/:id", authenticate, requireAdmin, handleDeleteHeroSlide);
 
 export default router;
