@@ -50,6 +50,10 @@ const setPasswordValidation = validateRequest([
     .isString()
     .isLength({ min: 8 })
     .withMessage("Le mot de passe doit contenir au moins 8 caractères"),
+  body("invitationToken")
+    .isString()
+    .notEmpty()
+    .withMessage("Le token d'invitation est requis"),
 ]);
 
 const checkPendingValidation = validateRequest([

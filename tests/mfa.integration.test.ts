@@ -33,6 +33,8 @@ describe("MFA integration — registration & onboarding obligatoire", () => {
     expect(inviteRes.status).toBe(201);
     expect(inviteRes.body.user.mfa_secret).toBeUndefined();
     expect(inviteRes.body.user.password_hash).toBeUndefined();
+    const invitationToken = inviteRes.body.invitation_token as string;
+    expect(invitationToken).toBeTruthy();
 
     // 2. Compte en attente
     const pendingRes = await api
@@ -46,7 +48,7 @@ describe("MFA integration — registration & onboarding obligatoire", () => {
     // 3. Validation de l'invitation = création du compte avec onboarding MFA obligatoire
     const setupRes = await api
       .post("/api/admin/set-password")
-      .send({ email: "invited@connecteo.mg", password: ADMIN_PASSWORD });
+      .send({ email: "invited@connecteo.mg", password: ADMIN_PASSWORD, invitationToken });
 
     expect(setupRes.status).toBe(201);
     expect(setupRes.body.requireMfaSetup).toBe(true);
@@ -177,11 +179,12 @@ describe("MFA integration — registration & onboarding obligatoire", () => {
     const superAdmin = await createUser({ userTypeId: 1 });
     const token = signToken(superAdmin.id, 1, superAdmin.email);
 
-    await api.post("/api/admin/invite").set("Authorization", `Bearer ${token}`).send({
+    const inviteRes = await api.post("/api/admin/invite").set("Authorization", `Bearer ${token}`).send({
       email: "bad@connecteo.mg",
       username: "bad-user",
     });
-    await api.post("/api/admin/set-password").send({ email: "bad@connecteo.mg", password: ADMIN_PASSWORD });
+    const inviteToken = inviteRes.body.invitation_token as string;
+    await api.post("/api/admin/set-password").send({ email: "bad@connecteo.mg", password: ADMIN_PASSWORD, invitationToken: inviteToken });
 
     const missing = await api.post("/api/admin/mfa/confirm-setup").send({ mfaToken: "xxx" });
     expect(missing.status).toBe(400);
@@ -197,14 +200,14 @@ describe("MFA integration — registration & onboarding obligatoire", () => {
     const superAdmin = await createUser({ userTypeId: 1 });
     const superAdminToken = signToken(superAdmin.id, 1, superAdmin.email);
 
-    await api.post("/api/admin/invite").set("Authorization", `Bearer ${superAdminToken}`).send({
+    const inviteRes = await api.post("/api/admin/invite").set("Authorization", `Bearer ${superAdminToken}`).send({
       email: "alias@connecteo.mg",
       username: "alias-user",
     });
 
     const setupRes = await api
       .post("/api/admin/set-password")
-      .send({ email: "alias@connecteo.mg", password: ADMIN_PASSWORD });
+      .send({ email: "alias@connecteo.mg", password: ADMIN_PASSWORD, invitationToken: inviteRes.body.invitation_token });
 
     const userId = setupRes.body.userId as number;
     const code = await totpCodeFor(userId);
@@ -235,11 +238,11 @@ describe("MFA integration — registration & onboarding obligatoire", () => {
     const superAdmin = await createUser({ userTypeId: 1 });
     const token = signToken(superAdmin.id, 1, superAdmin.email);
 
-    await api.post("/api/admin/invite").set("Authorization", `Bearer ${token}`).send({
+    const inviteRes = await api.post("/api/admin/invite").set("Authorization", `Bearer ${token}`).send({
       email: "list@connecteo.mg",
       username: "list-user",
     });
-    await api.post("/api/admin/set-password").send({ email: "list@connecteo.mg", password: ADMIN_PASSWORD });
+    await api.post("/api/admin/set-password").send({ email: "list@connecteo.mg", password: ADMIN_PASSWORD, invitationToken: inviteRes.body.invitation_token });
 
     const listRes = await api.get("/api/admin").set("Authorization", `Bearer ${token}`);
     expect(listRes.status).toBe(200);

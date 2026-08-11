@@ -1,4 +1,5 @@
-﻿import bcrypt from "bcryptjs";
+﻿import { randomBytes, timingSafeEqual } from "node:crypto";
+import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import prisma from "../lib/prisma.js";
 import { env } from "../config/env.config.js";
@@ -33,6 +34,19 @@ import {
 } from "./audit.service.js";
 
 const BCRYPT_ROUNDS = 12;
+
+/** Durée de validité du lien d'invitation (72 h). */
+const INVITATION_TTL_MS = 72 * 60 * 60 * 1000;
+
+/** Comparaison à temps constant pour les jetons d'invitation. */
+function secureTokenEqual(a: string, b: string): boolean {
+  const ab = Buffer.from(a);
+  const bb = Buffer.from(b);
+  if (ab.length !== bb.length) {
+    return false;
+  }
+  return timingSafeEqual(ab, bb);
+}
 
 /** Contexte d'audit optionnel transmis depuis le contrôleur (requête + acteur). */
 export interface AuditContext {
@@ -70,6 +84,7 @@ export interface UserResult {
   mfa_recovery_codes: string[];
   token_version: number;
   created_at: Date;
+  last_login_at: Date | null;
 }
 
 export type SafeUser = Omit<
@@ -85,6 +100,13 @@ export interface MfaSetupResult {
   email: string;
   otpauthUrl: string;
   qrCodeDataUrl: string;
+}
+
+/** Résultat d'une invitation : compte créé + jeton d'activation à transmettre. */
+export interface AdminInvitedResult {
+  user: SafeUser;
+  invitation_token: string;
+  invitation_token_expires: Date;
 }
 
 export type LoginResult =
@@ -162,7 +184,7 @@ async function ensureMfaSecret(user: UserResult): Promise<{ otpauthUrl: string; 
   return { otpauthUrl, qrCodeDataUrl };
 }
 
-export async function inviteAdmin(email: string, username: string, ctx?: AuditContext): Promise<SafeUser> {
+export async function inviteAdmin(email: string, username: string, ctx?: AuditContext): Promise<AdminInvitedResult> {
   return withAudit(ctx, (success, error) => ({
     eventType: AuditEventType.ADMIN_INVITED,
     action: "Invitation d'un administrateur",
@@ -181,6 +203,9 @@ export async function inviteAdmin(email: string, username: string, ctx?: AuditCo
       throw new ConflictError("Ce nom d'utilisateur est d├®j├á pris");
     }
 
+    const invitation_token = randomBytes(32).toString("hex");
+    const invitation_token_expires = new Date(Date.now() + INVITATION_TTL_MS);
+
     const user = await prisma.user.create({
       data: {
         email,
@@ -188,10 +213,12 @@ export async function inviteAdmin(email: string, username: string, ctx?: AuditCo
         password_hash: null,
         user_type_id: 2,
         is_active: false,
+        invitation_token,
+        invitation_token_expires,
       },
     }) as unknown as UserResult;
 
-    return toSafeUser(user);
+    return { user: toSafeUser(user), invitation_token, invitation_token_expires };
   });
 }
 
@@ -216,10 +243,18 @@ export async function checkPendingAdmin(email: string): Promise<SafeUser> {
     throw new BadRequestError("Ce compte a d├®j├á un mot de passe. Veuillez vous connecter.");
   }
 
+  if (!user.invitation_token || !user.invitation_token_expires) {
+    throw new BadRequestError("Aucun lien d'activation n'a ├®t├® ├®mis pour ce compte.");
+  }
+
+  if (user.invitation_token_expires < new Date()) {
+    throw new BadRequestError("Le lien d'invitation a expir├®. Contactez un super administrateur.");
+  }
+
   return toSafeUser(user);
 }
 
-export async function setPassword(email: string, password: string, ctx?: AuditContext): Promise<MfaSetupResult> {
+export async function setPassword(email: string, password: string, invitationToken: string, ctx?: AuditContext): Promise<MfaSetupResult> {
   return withAudit(ctx, (success, error) => ({
     eventType: AuditEventType.PASSWORD_SET,
     action: "Définition du mot de passe initial",
@@ -244,6 +279,14 @@ export async function setPassword(email: string, password: string, ctx?: AuditCo
       throw new BadRequestError("Ce compte a d├®j├á un mot de passe");
     }
 
+    if (!user.invitation_token || !invitationToken || !secureTokenEqual(invitationToken, user.invitation_token)) {
+      throw new UnauthorizedError("Le lien d'activation est invalide ou a d├®j├á ├®t├® utilis├®");
+    }
+
+    if (!user.invitation_token_expires || user.invitation_token_expires < new Date()) {
+      throw new UnauthorizedError("Le lien d'activation a expir├®");
+    }
+
     const hashedPassword = await bcrypt.hash(password, BCRYPT_ROUNDS);
 
     const updated = await prisma.user.update({
@@ -251,6 +294,8 @@ export async function setPassword(email: string, password: string, ctx?: AuditCo
       data: {
         password_hash: hashedPassword,
         is_active: true,
+        invitation_token: null,
+        invitation_token_expires: null,
       },
     }) as unknown as UserResult;
 
@@ -384,7 +429,7 @@ export async function confirmMfaSetup(mfaToken: string, code: string, ctx?: Audi
 
     const updated = await prisma.user.update({
       where: { id: user.id },
-      data: { mfa_enabled: true },
+      data: { mfa_enabled: true, last_login_at: new Date() },
     }) as unknown as UserResult;
 
     return {
@@ -420,6 +465,11 @@ export async function verifyMfa(mfaToken: string, code: string, ctx?: AuditConte
       throw new UnauthorizedError("Code de v├®rification invalide");
     }
 
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { last_login_at: new Date() },
+    });
+
     return { user: toSafeUser(user), token: signAccessToken(user), refreshToken: signRefreshToken(user) };
   });
 }
@@ -448,6 +498,10 @@ export async function deactivateAdmin(adminId: number, ctx?: AuditContext): Prom
       throw new NotFoundError("Administrateur");
     }
 
+    if (ctx?.actorUserId === adminId) {
+      throw new ForbiddenError("Vous ne pouvez pas d├®sactiver votre propre compte");
+    }
+
     if (user.user_type_id !== 2) {
       throw new BadRequestError("Seuls les administrateurs peuvent ├¬tre d├®sactiv├®s");
     }
@@ -474,6 +528,10 @@ export async function deleteAdmin(adminId: number, ctx?: AuditContext): Promise<
 
     if (!user) {
       throw new NotFoundError("Administrateur");
+    }
+
+    if (ctx?.actorUserId === adminId) {
+      throw new ForbiddenError("Vous ne pouvez pas supprimer votre propre compte");
     }
 
     if (user.user_type_id !== 2) {

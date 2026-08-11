@@ -38,7 +38,12 @@ export const handleInviteAdmin = asyncHandler(async (req: Request, res: Response
     actorUserId: req.user?.userId,
     actorEmail: req.user?.email,
   });
-  res.status(201).json({ message: "Admin invit├® avec succ├¿s", user });
+  res.status(201).json({
+    message: "Admin invit├® avec succ├¿s",
+    user: user.user,
+    invitation_token: user.invitation_token,
+    invitation_token_expires: user.invitation_token_expires,
+  });
 });
 
 export const handleCheckPending = asyncHandler(async (req: Request, res: Response) => {
@@ -54,14 +59,14 @@ export const handleCheckPending = asyncHandler(async (req: Request, res: Respons
 });
 
 export const handleSetPassword = asyncHandler(async (req: Request, res: Response) => {
-  const { email, password } = req.body;
+  const { email, password, invitationToken } = req.body;
 
-  if (!email || !password) {
-    res.status(400).json({ error: "Email et mot de passe sont requis" });
+  if (!email || !password || !invitationToken) {
+    res.status(400).json({ error: "Email, mot de passe et invitationToken sont requis" });
     return;
   }
 
-  const result = await setPassword(email, password, { meta: buildAuditMeta(req) });
+  const result = await setPassword(email, password, invitationToken, { meta: buildAuditMeta(req) });
   res.status(201).json(result);
 });
 

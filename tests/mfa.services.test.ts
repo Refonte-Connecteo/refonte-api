@@ -41,7 +41,7 @@ describe("confirmMfaSetup / verifyMfa (service)", () => {
   });
 
   it("setPassword échoue si le compte n'a pas été invité", async () => {
-    await expect(setPassword("inconnu@connecteo.mg", "Password123!")).rejects.toBeInstanceOf(NotFoundError);
+    await expect(setPassword("inconnu@connecteo.mg", "Password123!", "token-invalide")).rejects.toBeInstanceOf(NotFoundError);
   });
 
   it("verifyMfa échoue si le MFA n'est pas activé sur le compte", async () => {

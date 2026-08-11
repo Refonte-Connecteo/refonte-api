@@ -33,6 +33,7 @@ model user {
   mfa_enabled              Boolean   @default(false)
   mfa_recovery_codes       String[]  @default([])
   token_version            Int       @default(0)
+  last_login_at            DateTime?
   user_type                user_type @relation(fields: [user_type_id], references: [id])
 }
 
