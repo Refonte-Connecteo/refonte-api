@@ -45,6 +45,35 @@ model revoked_token {
   created_at DateTime @default(now())
 }
 
+/// Piste d'audit des événements de sécurité — écriture append-only, jamais
+/// de mise à jour ni de suppression. Tout événement est horodaté (UTC),
+/// rattaché à un acteur et porteur d'un request_id de corrélation.
+model audit_log {
+  id            Int       @id @default(autoincrement())
+  event_type    String
+  action        String
+  actor_user_id Int?
+  actor_email   String?
+  resource_type String?
+  resource_id   String?
+  success       Boolean
+  status_code   Int?
+  error_code    String?
+  ip            String?
+  user_agent    String?
+  request_id    String?
+  method        String?
+  route         String?
+  details       Json?
+  created_at    DateTime  @default(now())
+
+  @@index([created_at])
+  @@index([event_type])
+  @@index([actor_user_id])
+  @@index([success])
+  @@index([request_id])
+}
+
 /// S1 — Hero carousel
 model hero_slide {
   id          Int      @id @default(autoincrement())

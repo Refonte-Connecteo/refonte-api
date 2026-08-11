@@ -8,10 +8,12 @@ import path from "path";
 import { env } from "./config/env.config.js";
 import { logger } from "./lib/logger.js";
 import { globalLimiter } from "./middlewares/rateLimit.js";
+import { requestContext } from "./middlewares/requestContext.js";
 import routes from "./routes/index.js";
 import uploadRoutes from "./routes/upload.routes.js";
 import { AppError } from "./errors/index.js";
 import { rejectMaliciousInput } from "./middlewares/validation.middleware.js";
+import { logAuditEvent, buildAuditMeta, errorCodeFrom, AuditEventType } from "./services/audit.service.js";
 
 const app = express();
 
@@ -47,6 +49,7 @@ app.use((_req: Request, res: Response, next: NextFunction) => {
 });
 
 app.use(cors({ origin: env.FRONTEND_URL }));
+app.use(requestContext);
 app.use(pinoHttp({ logger, autoLogging: false }) as express.RequestHandler);
 app.use(globalLimiter);
 app.use(cookieParser());
@@ -88,14 +91,43 @@ app.use((_req: Request, res: Response) => {
   res.status(404).json({ error: "Route introuvable" });
 });
 
-app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
-  if (err instanceof AppError) {
-    res.status(err.statusCode).json({ error: err.message });
+app.use((err: Error, req: Request, res: Response, _next: NextFunction) => {
+  const meta = buildAuditMeta(req);
+  const statusCode = err instanceof AppError ? err.statusCode : 500;
+
+  if (statusCode >= 500) {
+    logger.error(err, "Erreur non gérée");
+    void logAuditEvent({
+      eventType: AuditEventType.ERROR,
+      action: "Erreur serveur",
+      success: false,
+      statusCode,
+      errorCode: errorCodeFrom(err),
+      meta,
+    });
+    res.status(500).json({ error: "Erreur interne du serveur" });
     return;
   }
 
-  logger.error(err, "Erreur non gérée");
-  res.status(500).json({ error: "Erreur interne du serveur" });
+  if (err instanceof AppError) {
+    const auditLogged = Boolean(
+      (err as AppError & { auditLogged?: boolean }).auditLogged,
+    );
+    if (!auditLogged && (statusCode === 401 || statusCode === 403)) {
+      void logAuditEvent({
+        eventType: AuditEventType.AUTH_FAILED,
+        action: "Accès refusé",
+        success: false,
+        statusCode,
+        errorCode: errorCodeFrom(err),
+        actorUserId: (req as Request & { user?: { userId?: number } }).user?.userId ?? null,
+        actorEmail: (req as Request & { user?: { email?: string } }).user?.email ?? null,
+        meta,
+      });
+    }
+    res.status(statusCode).json({ error: err.message });
+    return;
+  }
 });
 
 export default app;

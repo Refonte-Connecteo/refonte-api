@@ -71,6 +71,7 @@ export async function totpCodeFor(userId: number): Promise<string> {
 }
 
 export async function resetDatabase(): Promise<void> {
+  await prisma.audit_log.deleteMany();
   await prisma.revoked_token.deleteMany();
   await prisma.user.deleteMany();
 }

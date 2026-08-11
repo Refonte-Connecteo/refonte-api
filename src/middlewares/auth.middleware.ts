@@ -6,6 +6,11 @@ import { logger } from "../lib/logger.js";
 import prisma from "../lib/prisma.js";
 import { UnauthorizedError, ForbiddenError, BadRequestError } from "../errors/index.js";
 import { isTokenRevoked } from "../services/token.service.js";
+import {
+  logAuditEvent,
+  buildAuditMeta,
+  AuditEventType,
+} from "../services/audit.service.js";
 import type { JwtPayload } from "../services/user.services.js";
 
 declare global {
@@ -21,7 +26,17 @@ export function authenticate(req: Request, _res: Response, next: NextFunction): 
 
   if (!header || !header.startsWith("Bearer ")) {
     logger.warn({ ip: req.ip }, "Tentative d'accès sans token");
-    next(new UnauthorizedError("Token manquant ou invalide"));
+    void logAuditEvent({
+      eventType: AuditEventType.AUTH_FAILED,
+      action: "Accès sans token",
+      success: false,
+      statusCode: 401,
+      errorCode: "UNAUTHORIZED",
+      meta: buildAuditMeta(req),
+    });
+    const err = new UnauthorizedError("Token manquant ou invalide");
+    (err as UnauthorizedError & { auditLogged?: boolean }).auditLogged = true;
+    next(err);
     return;
   }
 
@@ -34,7 +49,17 @@ export function authenticate(req: Request, _res: Response, next: NextFunction): 
     }) as unknown as JwtPayload & { isMfaPending?: boolean };
   } catch {
     logger.warn({ ip: req.ip }, "Tentative d'accès avec token invalide");
-    next(new UnauthorizedError("Token invalide ou expiré"));
+    void logAuditEvent({
+      eventType: AuditEventType.AUTH_FAILED,
+      action: "Accès avec token invalide",
+      success: false,
+      statusCode: 401,
+      errorCode: "INVALID_TOKEN",
+      meta: buildAuditMeta(req),
+    });
+    const err = new UnauthorizedError("Token invalide ou expiré");
+    (err as UnauthorizedError & { auditLogged?: boolean }).auditLogged = true;
+    next(err);
     return;
   }
 
@@ -110,6 +135,15 @@ export function requireSuperAdmin(req: Request, _res: Response, next: NextFuncti
     throw new ForbiddenError("Accès réservé au super administrateur");
   }
 
+  void logAuditEvent({
+    eventType: AuditEventType.PRIVILEGED_REQUEST,
+    action: "Requête superAdmin",
+    success: true,
+    actorUserId: req.user.userId,
+    actorEmail: req.user.email,
+    meta: buildAuditMeta(req),
+  });
+
   next();
 }
 
@@ -121,6 +155,15 @@ export function requireAdmin(req: Request, _res: Response, next: NextFunction): 
   if (req.user.userTypeId !== 1 && req.user.userTypeId !== 2) {
     throw new ForbiddenError("Accès réservé aux administrateurs");
   }
+
+  void logAuditEvent({
+    eventType: AuditEventType.PRIVILEGED_REQUEST,
+    action: "Requête admin",
+    success: true,
+    actorUserId: req.user.userId,
+    actorEmail: req.user.email,
+    meta: buildAuditMeta(req),
+  });
 
   next();
 }

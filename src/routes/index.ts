@@ -22,6 +22,7 @@ import {
   handleLogout,
   handleChangePassword,
   handleDisableMfa,
+  handleGetAuditLogs,
 } from "../controllers/user.controller.js";
 import ceoMessageRouter from "./Ceomessage.routes.js";
 import heroSlideRouter from "./HeroSlide.routes.js";
@@ -100,6 +101,9 @@ router.post("/admin/invite", authenticate, requireSuperAdmin, handleInviteAdmin)
 router.get("/admin", authenticate, requireSuperAdmin, handleGetAllAdmins);
 router.delete("/admin/:id/deactivate", authenticate, requireSuperAdmin, handleDeactivateAdmin);
 router.delete("/admin/:id", authenticate, requireSuperAdmin, handleDeleteAdmin);
+
+// Piste d'audit (consultation réservée superAdmin)
+router.get("/admin/audit-logs", authenticate, requireSuperAdmin, handleGetAuditLogs);
 
 // Content management routes
 router.use("/ceomessage", ceoMessageRouter);

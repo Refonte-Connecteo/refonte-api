@@ -24,8 +24,37 @@ import {
   verifyRefreshToken,
   type RefreshTokenPayload,
 } from "./token.service.js";
+import {
+  logAuditEvent,
+  AuditEventType,
+  errorCodeFrom,
+  type AuditMeta,
+  type AuditEventInput,
+} from "./audit.service.js";
 
 const BCRYPT_ROUNDS = 12;
+
+/** Contexte d'audit optionnel transmis depuis le contrôleur (requête + acteur). */
+export interface AuditContext {
+  meta?: AuditMeta | null;
+  actorUserId?: number | null;
+  actorEmail?: string | null;
+}
+
+async function withAudit<T>(
+  ctx: AuditContext | undefined,
+  buildEvent: (success: boolean, error?: unknown) => Omit<AuditEventInput, "meta" | "actorUserId" | "actorEmail">,
+  fn: () => Promise<T>,
+): Promise<T> {
+  try {
+    const result = await fn();
+    void logAuditEvent({ ...buildEvent(true), meta: ctx?.meta, actorUserId: ctx?.actorUserId, actorEmail: ctx?.actorEmail });
+    return result;
+  } catch (error) {
+    void logAuditEvent({ ...buildEvent(false, error), meta: ctx?.meta, actorUserId: ctx?.actorUserId, actorEmail: ctx?.actorEmail });
+    throw error;
+  }
+}
 
 export interface UserResult {
   id: number;
@@ -133,28 +162,37 @@ async function ensureMfaSecret(user: UserResult): Promise<{ otpauthUrl: string; 
   return { otpauthUrl, qrCodeDataUrl };
 }
 
-export async function inviteAdmin(email: string, username: string): Promise<SafeUser> {
-  const existingEmail = await prisma.user.findUnique({ where: { email } });
-  if (existingEmail) {
-    throw new ConflictError("Un utilisateur avec cet email existe d├®j├á");
-  }
+export async function inviteAdmin(email: string, username: string, ctx?: AuditContext): Promise<SafeUser> {
+  return withAudit(ctx, (success, error) => ({
+    eventType: AuditEventType.ADMIN_INVITED,
+    action: "Invitation d'un administrateur",
+    success,
+    errorCode: success ? undefined : errorCodeFrom(error),
+    resourceType: "user",
+    details: { email, username },
+  }), async () => {
+    const existingEmail = await prisma.user.findUnique({ where: { email } });
+    if (existingEmail) {
+      throw new ConflictError("Un utilisateur avec cet email existe d├®j├á");
+    }
 
-  const existingUsername = await prisma.user.findUnique({ where: { username } });
-  if (existingUsername) {
-    throw new ConflictError("Ce nom d'utilisateur est d├®j├á pris");
-  }
+    const existingUsername = await prisma.user.findUnique({ where: { username } });
+    if (existingUsername) {
+      throw new ConflictError("Ce nom d'utilisateur est d├®j├á pris");
+    }
 
-  const user = await prisma.user.create({
-    data: {
-      email,
-      username,
-      password_hash: null,
-      user_type_id: 2,
-      is_active: false,
-    },
-  }) as unknown as UserResult;
+    const user = await prisma.user.create({
+      data: {
+        email,
+        username,
+        password_hash: null,
+        user_type_id: 2,
+        is_active: false,
+      },
+    }) as unknown as UserResult;
 
-  return toSafeUser(user);
+    return toSafeUser(user);
+  });
 }
 
 export async function checkPendingAdmin(email: string): Promise<SafeUser> {
@@ -181,70 +219,106 @@ export async function checkPendingAdmin(email: string): Promise<SafeUser> {
   return toSafeUser(user);
 }
 
-export async function setPassword(email: string, password: string): Promise<MfaSetupResult> {
-  if (password.length < 8) {
-    throw new BadRequestError("Le mot de passe doit contenir au moins 8 caract├¿res");
-  }
+export async function setPassword(email: string, password: string, ctx?: AuditContext): Promise<MfaSetupResult> {
+  return withAudit(ctx, (success, error) => ({
+    eventType: AuditEventType.PASSWORD_SET,
+    action: "Définition du mot de passe initial",
+    success,
+    errorCode: success ? undefined : errorCodeFrom(error),
+    resourceType: "user",
+    details: { email },
+  }), async () => {
+    if (password.length < 8) {
+      throw new BadRequestError("Le mot de passe doit contenir au moins 8 caract├¿res");
+    }
 
-  const user = await prisma.user.findUnique({
-    where: { email },
-  }) as unknown as UserResult | null;
+    const user = await prisma.user.findUnique({
+      where: { email },
+    }) as unknown as UserResult | null;
 
-  if (!user) {
-    throw new NotFoundError("Aucun compte trouv├® avec cet email");
-  }
+    if (!user) {
+      throw new NotFoundError("Aucun compte trouv├® avec cet email");
+    }
 
-  if (user.password_hash) {
-    throw new BadRequestError("Ce compte a d├®j├á un mot de passe");
-  }
+    if (user.password_hash) {
+      throw new BadRequestError("Ce compte a d├®j├á un mot de passe");
+    }
 
-  const hashedPassword = await bcrypt.hash(password, BCRYPT_ROUNDS);
+    const hashedPassword = await bcrypt.hash(password, BCRYPT_ROUNDS);
 
-  const updated = await prisma.user.update({
-    where: { id: user.id },
-    data: {
-      password_hash: hashedPassword,
-      is_active: true,
-    },
-  }) as unknown as UserResult;
+    const updated = await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        password_hash: hashedPassword,
+        is_active: true,
+      },
+    }) as unknown as UserResult;
 
-  const { otpauthUrl, qrCodeDataUrl } = await ensureMfaSecret(updated);
+    const { otpauthUrl, qrCodeDataUrl } = await ensureMfaSecret(updated);
 
-  return {
-    message: "Compte cr├®├®. L'activation du MFA est obligatoire : scannez le QR Code puis validez-le.",
-    requireMfaSetup: true,
-    mfaToken: signMfaToken(updated.id),
-    userId: updated.id,
-    email: updated.email,
-    otpauthUrl,
-    qrCodeDataUrl,
-  };
+    return {
+      message: "Compte cr├®├®. L'activation du MFA est obligatoire : scannez le QR Code puis validez-le.",
+      requireMfaSetup: true,
+      mfaToken: signMfaToken(updated.id),
+      userId: updated.id,
+      email: updated.email,
+      otpauthUrl,
+      qrCodeDataUrl,
+    };
+  });
 }
 
-export async function login(email: string, password: string): Promise<LoginResult> {
+export async function login(email: string, password: string, ctx?: AuditContext): Promise<LoginResult> {
   const user = await prisma.user.findUnique({
     where: { email },
     include: { user_type: true },
   }) as unknown as (UserResult & { user_type: { id: number; type: string } }) | null;
 
+  const logFailedLogin = (error: unknown): void => {
+    void logAuditEvent({
+      eventType: AuditEventType.LOGIN_FAILED,
+      action: "Tentative de connexion",
+      success: false,
+      statusCode: 401,
+      errorCode: errorCodeFrom(error, "LOGIN_FAILED"),
+      actorEmail: email,
+      details: { email },
+      meta: ctx?.meta,
+    });
+  };
+
   if (!user) {
+    logFailedLogin(new UnauthorizedError("Email ou mot de passe incorrect"));
     throw new UnauthorizedError("Email ou mot de passe incorrect");
   }
 
   if (!user.is_active) {
+    logFailedLogin(new ForbiddenError("Ce compte n'est pas actif"));
     throw new ForbiddenError("Ce compte n'est pas actif");
   }
 
   if (!user.password_hash) {
+    logFailedLogin(new UnauthorizedError("Vous devez d'abord d├®finir votre mot de passe via le lien d'invitation"));
     throw new UnauthorizedError("Vous devez d'abord d├®finir votre mot de passe via le lien d'invitation");
   }
 
   const isValid = await bcrypt.compare(password, user.password_hash);
   if (!isValid) {
+    logFailedLogin(new UnauthorizedError("Email ou mot de passe incorrect"));
     throw new UnauthorizedError("Email ou mot de passe incorrect");
   }
 
   if (user.mfa_enabled) {
+    void logAuditEvent({
+      eventType: AuditEventType.LOGIN_SUCCESS,
+      action: "Connexion réussie",
+      success: true,
+      statusCode: 200,
+      actorUserId: user.id,
+      actorEmail: user.email,
+      details: { mfaRequired: true },
+      meta: ctx?.meta,
+    });
     return {
       status: "mfa",
       requireMfa: true,
@@ -254,6 +328,17 @@ export async function login(email: string, password: string): Promise<LoginResul
   }
 
   const { otpauthUrl, qrCodeDataUrl } = await ensureMfaSecret(user);
+
+  void logAuditEvent({
+    eventType: AuditEventType.LOGIN_SUCCESS,
+    action: "Connexion réussie",
+    success: true,
+    statusCode: 200,
+    actorUserId: user.id,
+    actorEmail: user.email,
+    details: { mfaSetupRequired: true },
+    meta: ctx?.meta,
+  });
 
   return {
     status: "mfa-setup",
@@ -267,61 +352,76 @@ export async function login(email: string, password: string): Promise<LoginResul
   };
 }
 
-export async function confirmMfaSetup(mfaToken: string, code: string): Promise<AuthResult> {
-  const userId = extractMfaPendingUserId(mfaToken);
+export async function confirmMfaSetup(mfaToken: string, code: string, ctx?: AuditContext): Promise<AuthResult> {
+  return withAudit(ctx, (success, error) => ({
+    eventType: success ? AuditEventType.MFA_SETUP : AuditEventType.MFA_SETUP_FAILED,
+    action: "Activation du MFA",
+    success,
+    errorCode: success ? undefined : errorCodeFrom(error),
+    meta: ctx?.meta,
+  }), async () => {
+    const userId = extractMfaPendingUserId(mfaToken);
 
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-  }) as unknown as UserResult | null;
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+    }) as unknown as UserResult | null;
 
-  if (!user) {
-    throw new NotFoundError("Utilisateur");
-  }
+    if (!user) {
+      throw new NotFoundError("Utilisateur");
+    }
 
-  if (!user.mfa_secret) {
-    throw new BadRequestError("Aucune configuration MFA en attente pour ce compte");
-  }
+    if (!user.mfa_secret) {
+      throw new BadRequestError("Aucune configuration MFA en attente pour ce compte");
+    }
 
-  if (user.mfa_enabled) {
-    throw new BadRequestError("Le MFA est d├®j├á activ├® sur ce compte");
-  }
+    if (user.mfa_enabled) {
+      throw new BadRequestError("Le MFA est d├®j├á activ├® sur ce compte");
+    }
 
-  if (!isValidTotpCode(code, user.mfa_secret)) {
-    throw new UnauthorizedError("Code de v├®rification invalide");
-  }
+    if (!isValidTotpCode(code, user.mfa_secret)) {
+      throw new UnauthorizedError("Code de v├®rification invalide");
+    }
 
-  const updated = await prisma.user.update({
-    where: { id: user.id },
-    data: { mfa_enabled: true },
-  }) as unknown as UserResult;
+    const updated = await prisma.user.update({
+      where: { id: user.id },
+      data: { mfa_enabled: true },
+    }) as unknown as UserResult;
 
-  return {
-    user: toSafeUser(updated),
-    token: signAccessToken(updated),
-    refreshToken: signRefreshToken(updated),
-  };
+    return {
+      user: toSafeUser(updated),
+      token: signAccessToken(updated),
+      refreshToken: signRefreshToken(updated),
+    };
+  });
 }
 
-export async function verifyMfa(mfaToken: string, code: string): Promise<AuthResult> {
-  const userId = extractMfaPendingUserId(mfaToken);
+export async function verifyMfa(mfaToken: string, code: string, ctx?: AuditContext): Promise<AuthResult> {
+  return withAudit(ctx, (success, error) => ({
+    eventType: success ? AuditEventType.MFA_VERIFY_SUCCESS : AuditEventType.MFA_VERIFY_FAILED,
+    action: "Vérification MFA",
+    success,
+    errorCode: success ? undefined : errorCodeFrom(error),
+  }), async () => {
+    const userId = extractMfaPendingUserId(mfaToken);
 
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-  }) as unknown as UserResult | null;
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+    }) as unknown as UserResult | null;
 
-  if (!user) {
-    throw new NotFoundError("Utilisateur");
-  }
+    if (!user) {
+      throw new NotFoundError("Utilisateur");
+    }
 
-  if (!user.mfa_secret || !user.mfa_enabled) {
-    throw new BadRequestError("Le MFA n'est pas activ├® sur ce compte");
-  }
+    if (!user.mfa_secret || !user.mfa_enabled) {
+      throw new BadRequestError("Le MFA n'est pas activ├® sur ce compte");
+    }
 
-  if (!isValidTotpCode(code, user.mfa_secret)) {
-    throw new UnauthorizedError("Code de v├®rification invalide");
-  }
+    if (!isValidTotpCode(code, user.mfa_secret)) {
+      throw new UnauthorizedError("Code de v├®rification invalide");
+    }
 
-  return { user: toSafeUser(user), token: signAccessToken(user), refreshToken: signRefreshToken(user) };
+    return { user: toSafeUser(user), token: signAccessToken(user), refreshToken: signRefreshToken(user) };
+  });
 }
 
 export async function getAllAdmins(): Promise<SafeUser[]> {
@@ -333,37 +433,55 @@ export async function getAllAdmins(): Promise<SafeUser[]> {
   return users.map(toSafeUser);
 }
 
-export async function deactivateAdmin(adminId: number): Promise<SafeUser> {
-  const user = await prisma.user.findUnique({ where: { id: adminId } }) as unknown as UserResult | null;
+export async function deactivateAdmin(adminId: number, ctx?: AuditContext): Promise<SafeUser> {
+  return withAudit(ctx, (success, error) => ({
+    eventType: AuditEventType.ADMIN_DEACTIVATED,
+    action: "Désactivation d'un administrateur",
+    success,
+    errorCode: success ? undefined : errorCodeFrom(error),
+    resourceType: "user",
+    resourceId: String(adminId),
+  }), async () => {
+    const user = await prisma.user.findUnique({ where: { id: adminId } }) as unknown as UserResult | null;
 
-  if (!user) {
-    throw new NotFoundError("Administrateur");
-  }
+    if (!user) {
+      throw new NotFoundError("Administrateur");
+    }
 
-  if (user.user_type_id !== 2) {
-    throw new BadRequestError("Seuls les administrateurs peuvent ├¬tre d├®sactiv├®s");
-  }
+    if (user.user_type_id !== 2) {
+      throw new BadRequestError("Seuls les administrateurs peuvent ├¬tre d├®sactiv├®s");
+    }
 
-  const updated = await prisma.user.update({
-    where: { id: adminId },
-    data: { is_active: false },
-  }) as unknown as UserResult;
+    const updated = await prisma.user.update({
+      where: { id: adminId },
+      data: { is_active: false },
+    }) as unknown as UserResult;
 
-  return toSafeUser(updated);
+    return toSafeUser(updated);
+  });
 }
 
-export async function deleteAdmin(adminId: number): Promise<void> {
-  const user = await prisma.user.findUnique({ where: { id: adminId } }) as unknown as UserResult | null;
+export async function deleteAdmin(adminId: number, ctx?: AuditContext): Promise<void> {
+  return withAudit(ctx, (success, error) => ({
+    eventType: AuditEventType.ADMIN_DELETED,
+    action: "Suppression définitive d'un administrateur",
+    success,
+    errorCode: success ? undefined : errorCodeFrom(error),
+    resourceType: "user",
+    resourceId: String(adminId),
+  }), async () => {
+    const user = await prisma.user.findUnique({ where: { id: adminId } }) as unknown as UserResult | null;
 
-  if (!user) {
-    throw new NotFoundError("Administrateur");
-  }
+    if (!user) {
+      throw new NotFoundError("Administrateur");
+    }
 
-  if (user.user_type_id !== 2) {
-    throw new BadRequestError("Seuls les administrateurs peuvent ├¬tre supprim├®s");
-  }
+    if (user.user_type_id !== 2) {
+      throw new BadRequestError("Seuls les administrateurs peuvent ├¬tre supprim├®s");
+    }
 
-  await prisma.user.delete({ where: { id: adminId } });
+    await prisma.user.delete({ where: { id: adminId } });
+  });
 }
 
 export async function getProfile(userId: number): Promise<SafeUser> {
@@ -379,72 +497,105 @@ export async function getProfile(userId: number): Promise<SafeUser> {
   return toSafeUser(user);
 }
 
-export async function changePassword(userId: number, newPassword: string): Promise<void> {
-  if (newPassword.length < 8) {
-    throw new BadRequestError("Le mot de passe doit contenir au moins 8 caract├¿res");
-  }
+export async function changePassword(userId: number, newPassword: string, ctx?: AuditContext): Promise<void> {
+  return withAudit(ctx, (success, error) => ({
+    eventType: AuditEventType.PASSWORD_CHANGED,
+    action: "Changement de mot de passe",
+    success,
+    errorCode: success ? undefined : errorCodeFrom(error),
+    resourceType: "user",
+    resourceId: String(userId),
+  }), async () => {
+    if (newPassword.length < 8) {
+      throw new BadRequestError("Le mot de passe doit contenir au moins 8 caract├¿res");
+    }
 
-  const user = await prisma.user.findUnique({ where: { id: userId } }) as unknown as UserResult | null;
+    const user = await prisma.user.findUnique({ where: { id: userId } }) as unknown as UserResult | null;
 
-  if (!user) {
-    throw new NotFoundError("Utilisateur");
-  }
+    if (!user) {
+      throw new NotFoundError("Utilisateur");
+    }
 
-  const hashedPassword = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
+    const hashedPassword = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
 
-  await prisma.user.update({
-    where: { id: userId },
-    data: { password_hash: hashedPassword },
+    await prisma.user.update({
+      where: { id: userId },
+      data: { password_hash: hashedPassword },
+    });
+
+    await revokeAllTokensForUser(userId);
   });
-
-  await revokeAllTokensForUser(userId);
 }
 
-export async function disableMfa(userId: number): Promise<SafeUser> {
-  const user = await prisma.user.findUnique({ where: { id: userId } }) as unknown as UserResult | null;
+export async function disableMfa(userId: number, ctx?: AuditContext): Promise<SafeUser> {
+  return withAudit(ctx, (success, error) => ({
+    eventType: AuditEventType.MFA_DISABLED,
+    action: "Désactivation du MFA",
+    success,
+    errorCode: success ? undefined : errorCodeFrom(error),
+    resourceType: "user",
+    resourceId: String(userId),
+  }), async () => {
+    const user = await prisma.user.findUnique({ where: { id: userId } }) as unknown as UserResult | null;
 
-  if (!user) {
-    throw new NotFoundError("Utilisateur");
-  }
+    if (!user) {
+      throw new NotFoundError("Utilisateur");
+    }
 
-  if (!user.mfa_enabled) {
-    throw new BadRequestError("Le MFA n'est pas activ├® sur ce compte");
-  }
+    if (!user.mfa_enabled) {
+      throw new BadRequestError("Le MFA n'est pas activ├® sur ce compte");
+    }
 
-  const updated = await prisma.user.update({
-    where: { id: userId },
-    data: {
-      mfa_secret: null,
-      mfa_enabled: false,
-      mfa_recovery_codes: [],
-    },
-  }) as unknown as UserResult;
+    const updated = await prisma.user.update({
+      where: { id: userId },
+      data: {
+        mfa_secret: null,
+        mfa_enabled: false,
+        mfa_recovery_codes: [],
+      },
+    }) as unknown as UserResult;
 
-  await revokeAllTokensForUser(userId);
+    await revokeAllTokensForUser(userId);
 
-  return toSafeUser(updated);
+    return toSafeUser(updated);
+  });
 }
 
-export async function logout(userId: number, token: string): Promise<void> {
+export async function logout(userId: number, token: string, ctx?: AuditContext): Promise<void> {
   await revokeToken(token, userId);
+  void logAuditEvent({
+    eventType: AuditEventType.LOGOUT,
+    action: "Déconnexion",
+    success: true,
+    actorUserId: userId,
+    actorEmail: ctx?.actorEmail,
+    meta: ctx?.meta,
+  });
 }
 
-export async function refreshAccessToken(refreshToken: string): Promise<{ token: string; refreshToken: string }> {
-  const decoded: RefreshTokenPayload = await verifyRefreshToken(refreshToken);
+export async function refreshAccessToken(refreshToken: string, ctx?: AuditContext): Promise<{ token: string; refreshToken: string }> {
+  return withAudit(ctx, (success, error) => ({
+    eventType: success ? AuditEventType.TOKEN_REFRESH : AuditEventType.TOKEN_REFRESH_FAILED,
+    action: "Renouvellement de jeton",
+    success,
+    errorCode: success ? undefined : errorCodeFrom(error),
+  }), async () => {
+    const decoded: RefreshTokenPayload = await verifyRefreshToken(refreshToken);
 
-  const user = await prisma.user.findUnique({
-    where: { id: decoded.userId },
-  }) as unknown as UserResult | null;
+    const user = await prisma.user.findUnique({
+      where: { id: decoded.userId },
+    }) as unknown as UserResult | null;
 
-  if (!user || !user.is_active) {
-    throw new UnauthorizedError("Compte inactif ou introuvable");
-  }
+    if (!user || !user.is_active) {
+      throw new UnauthorizedError("Compte inactif ou introuvable");
+    }
 
-  if (user.token_version !== decoded.tokenVersion) {
-    throw new UnauthorizedError("Token de rafra├«chissement r├®voqu├®");
-  }
+    if (user.token_version !== decoded.tokenVersion) {
+      throw new UnauthorizedError("Token de rafra├«chissement r├®voqu├®");
+    }
 
-  await revokeToken(refreshToken, user.id);
+    await revokeToken(refreshToken, user.id);
 
-  return { token: signAccessToken(user), refreshToken: signRefreshToken(user) };
+    return { token: signAccessToken(user), refreshToken: signRefreshToken(user) };
+  });
 }

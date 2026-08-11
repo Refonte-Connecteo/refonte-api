@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction } from "express";
 import { body, validationResult, type ValidationChain } from "express-validator";
+import { logAuditEvent, buildAuditMeta, AuditEventType } from "../services/audit.service.js";
 
 const MALICIOUS_PATTERNS: RegExp[] = [
   /<script[\s>]/i,
@@ -77,6 +78,14 @@ export function rejectMaliciousInput(req: Request, res: Response, next: NextFunc
   const sources: unknown[] = [req.body, req.query, req.params];
 
   if (sources.some((source) => containsMaliciousInput(source))) {
+    void logAuditEvent({
+      eventType: AuditEventType.VALIDATION_REJECTED,
+      action: "Contenu malveillant (XSS) détecté",
+      success: false,
+      statusCode: 400,
+      errorCode: "MALICIOUS_INPUT",
+      meta: buildAuditMeta(req),
+    });
     res.status(400).json({ error: "Contenu malveillant détecté dans la requête" });
     return;
   }
@@ -107,6 +116,19 @@ export function validateRequest(validations: ValidationChain[]) {
     const errors = validationResult(req);
 
     if (!errors.isEmpty()) {
+      void logAuditEvent({
+        eventType: AuditEventType.VALIDATION_REJECTED,
+        action: "Validation de requête rejetée",
+        success: false,
+        statusCode: 400,
+        errorCode: "VALIDATION_ERROR",
+        details: {
+          fields: errors.array().map((error) =>
+            error.type === "field" ? error.path : "request",
+          ),
+        },
+        meta: buildAuditMeta(req),
+      });
       res.status(400).json({
         error: "Données invalides",
         details: errors.array().map((error) => ({

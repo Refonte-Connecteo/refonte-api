@@ -33,6 +33,7 @@ export const env = {
     .split(",")
     .map((domain) => domain.trim().toLowerCase())
     .filter(Boolean),
+  AUDIT_RETENTION_DAYS: parseInt(process.env.AUDIT_RETENTION_DAYS || "7", 10),
 };
 
 assertStrongJwtSecret(env.JWT_SECRET);
