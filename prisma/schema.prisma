@@ -213,3 +213,17 @@ model contact_message {
   is_read     Boolean  @default(false)
   submitted_at DateTime @default(now()) 
 }
+
+/// S8 — Page views (analytics site public, sans cookie ni PII)
+model page_view {
+  id         Int      @id @default(autoincrement())
+  visitor_id String
+  path       String
+  referrer   String?
+  user_agent String?
+  device     String?
+  created_at DateTime @default(now())
+
+  @@index([created_at])
+  @@index([visitor_id])
+}

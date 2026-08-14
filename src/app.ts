@@ -12,6 +12,7 @@ import { globalLimiter } from "./middlewares/rateLimit.js";
 import { requestContext } from "./middlewares/requestContext.js";
 import routes from "./routes/index.js";
 import uploadRoutes from "./routes/upload.routes.js";
+import analyticsRoutes from "./routes/analytics.routes.js";
 import { AppError } from "./errors/index.js";
 import { rejectMaliciousInput } from "./middlewares/validation.middleware.js";
 import { logAuditEvent, buildAuditMeta, errorCodeFrom, AuditEventType } from "./services/audit.service.js";
@@ -101,6 +102,7 @@ app.use("/api", (_req: Request, res: Response, next: NextFunction) => {
 
 app.use("/api", routes);
 app.use("/api/upload", uploadRoutes);
+app.use("/api/analytics", analyticsRoutes);
 
 app.use((_req: Request, res: Response) => {
   res.status(404).json({ error: "Route introuvable" });

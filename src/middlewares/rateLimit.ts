@@ -15,7 +15,11 @@ const RATE_LIMIT_MESSAGE = { error: "Trop de requêtes. Veuillez réessayer dans
 const authLimitMessage = { error: "Trop de tentatives. Veuillez réessayer dans 30 secondes." };
 
 const uploadLimitMessage = {
-  error: "Trop d'uploads. Veuillez réessayer dans quelques minutes.",
+  error: "Trop d'uploads. Veuillez rǸessayer dans quelques minutes.",
+};
+
+const pageViewLimitMessage = {
+  error: "Trop de requ��tes de tracking. Veuillez rǸessayer plus tard.",
 };
 
 /**
@@ -54,6 +58,42 @@ export function createUploadCvLimiter(options?: {
 }
 
 export const uploadCvLimiter: RequestHandler = createUploadCvLimiter();
+
+/**
+ * Limiteur dǸdiǸ aux remontes de vues analytics (par IP).
+ * Public, donc plafonnǸ : 30 requ��tes/min en prod, 100 en test.
+ */
+export function createPageViewLimiter(options?: {
+  windowMs?: number;
+  max?: number;
+}): RequestHandler {
+  const defaults = IS_TEST
+    ? { windowMs: 60 * 1000, max: 100 }
+    : { windowMs: 60 * 1000, max: 30 };
+
+  const { windowMs, max } = { ...defaults, ...options };
+
+  return rateLimit({
+    windowMs,
+    max,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: pageViewLimitMessage,
+    handler: (req, res) => {
+      void logAuditEvent({
+        eventType: AuditEventType.RATE_LIMITED,
+        action: "Limite de tracking d'analytics dǸpassǸe",
+        success: false,
+        statusCode: 429,
+        errorCode: "RATE_LIMIT",
+        meta: buildAuditMeta(req),
+      });
+      res.status(429).json(pageViewLimitMessage);
+    },
+  });
+}
+
+export const pageViewLimiter: RequestHandler = createPageViewLimiter();
 
 export const globalLimiter: RequestHandler = IS_TEST
   ? noop
