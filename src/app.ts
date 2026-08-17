@@ -128,6 +128,7 @@ function wantsHtml(req: Request): boolean {
 function sendError(res: Response, statusCode: number, message: string, req: Request): void {
   if (wantsHtml(req)) {
     const title = `${statusCode}`;
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
     res.status(statusCode).send(
       `<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><title>${title}</title></head><body><h1>${title} — ${message}</h1></body></html>`,
     );
