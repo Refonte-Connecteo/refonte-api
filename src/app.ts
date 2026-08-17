@@ -21,6 +21,11 @@ const app = express();
 
 app.disable("x-powered-by");
 
+app.use((_req: Request, res: Response, next: NextFunction) => {
+  res.removeHeader("Server");
+  next();
+});
+
 app.use(
   helmet({
     contentSecurityPolicy: {
@@ -51,6 +56,17 @@ app.use((_req: Request, res: Response, next: NextFunction) => {
 });
 
 app.use(cors({ origin: env.FRONTEND_URL }));
+
+if (process.env.NODE_ENV === "production") {
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    if (req.method === "TRACE") {
+      res.status(405).json({ error: "Méthode non autorisée" });
+      return;
+    }
+    next();
+  });
+}
+
 app.use(requestContext);
 app.use(pinoHttp({ logger, autoLogging: false }) as express.RequestHandler);
 app.use(globalLimiter);
@@ -104,8 +120,24 @@ app.use("/api", routes);
 app.use("/api/upload", uploadRoutes);
 app.use("/api/analytics", analyticsRoutes);
 
+function wantsHtml(req: Request): boolean {
+  const accept = req.get("Accept") ?? "";
+  return accept.includes("text/html");
+}
+
+function sendError(res: Response, statusCode: number, message: string, req: Request): void {
+  if (wantsHtml(req)) {
+    const title = `${statusCode}`;
+    res.status(statusCode).send(
+      `<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><title>${title}</title></head><body><h1>${title} — ${message}</h1></body></html>`,
+    );
+    return;
+  }
+  res.status(statusCode).json({ error: message });
+}
+
 app.use((_req: Request, res: Response) => {
-  res.status(404).json({ error: "Route introuvable" });
+  sendError(res, 404, "Route introuvable", _req);
 });
 
 app.use((err: Error, req: Request, res: Response, _next: NextFunction) => {
@@ -122,12 +154,8 @@ app.use((err: Error, req: Request, res: Response, _next: NextFunction) => {
       details: { code: err.code },
       meta,
     });
-    res.status(uploadStatusCode).json({
-      error:
-        uploadStatusCode === 413
-          ? "Fichier trop volumineux"
-          : "Fichier invalide",
-    });
+    sendError(res, uploadStatusCode,
+      uploadStatusCode === 413 ? "Fichier trop volumineux" : "Fichier invalide", req);
     return;
   }
 
@@ -143,7 +171,7 @@ app.use((err: Error, req: Request, res: Response, _next: NextFunction) => {
       errorCode: errorCodeFrom(err),
       meta,
     });
-    res.status(500).json({ error: "Erreur interne du serveur" });
+    sendError(res, 500, "Erreur interne du serveur", req);
     return;
   }
 
@@ -163,7 +191,7 @@ app.use((err: Error, req: Request, res: Response, _next: NextFunction) => {
         meta,
       });
     }
-    res.status(statusCode).json({ error: err.message });
+    sendError(res, statusCode, err.message, req);
     return;
   }
 });
