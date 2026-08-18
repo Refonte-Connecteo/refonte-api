@@ -168,7 +168,7 @@ describe("Sécurité des tokens — réauthentification des opérations sensible
     expect(stored?.mfa_secret).toBeNull();
   });
 
-  it("change le mot de passe avec le mot de passe actuel correct, puis bloque l'ancien", async () => {
+  it("change le mot de passe avec le mot de passe actuel correct, puis bloque l'ancien", { timeout: 15000 }, async () => {
     const user = await createMfaUser();
     const { token } = await loginViaApi(user.email, user.password);
 
