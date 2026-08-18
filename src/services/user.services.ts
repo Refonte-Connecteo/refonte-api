@@ -79,11 +79,12 @@ export interface UserResult {
   is_active: boolean;
   invitation_token: string | null;
   invitation_token_expires: Date | null;
+  created_at: Date;
   mfa_secret: string | null;
   mfa_enabled: boolean;
   mfa_recovery_codes: string[];
   token_version: number;
-  created_at: Date;
+  force_password_change: boolean;
   last_login_at: Date | null;
 }
 
@@ -110,9 +111,9 @@ export interface AdminInvitedResult {
 }
 
 export type LoginResult =
-  | { status: "mfa"; requireMfa: true; mfaToken: string; userId: number }
+  | { status: "mfa"; requireMfa: true; mfaToken: string; userId: number; forcePasswordChange: boolean }
   | (MfaSetupResult & { status: "mfa-setup" })
-  | { status: "success"; requireMfa: false; user: SafeUser; token: string; refreshToken: string };
+  | { status: "success"; requireMfa: false; user: SafeUser; token: string; refreshToken: string; forcePasswordChange: boolean };
 
 export type JwtPayload = {
   userId: number;
@@ -133,6 +134,7 @@ export type AuthResult = {
   user: SafeUser;
   token: string;
   refreshToken: string;
+  forcePasswordChange: boolean;
 };
 
 export type MfaTokenPayload = {
@@ -369,6 +371,7 @@ export async function login(email: string, password: string, ctx?: AuditContext)
       requireMfa: true,
       mfaToken: signMfaToken(user.id),
       userId: user.id,
+      forcePasswordChange: user.force_password_change,
     };
   }
 
@@ -436,6 +439,7 @@ export async function confirmMfaSetup(mfaToken: string, code: string, ctx?: Audi
       user: toSafeUser(updated),
       token: signAccessToken(updated),
       refreshToken: signRefreshToken(updated),
+      forcePasswordChange: updated.force_password_change,
     };
   });
 }
@@ -470,7 +474,7 @@ export async function verifyMfa(mfaToken: string, code: string, ctx?: AuditConte
       data: { last_login_at: new Date() },
     });
 
-    return { user: toSafeUser(user), token: signAccessToken(user), refreshToken: signRefreshToken(user) };
+    return { user: toSafeUser(user), token: signAccessToken(user), refreshToken: signRefreshToken(user), forcePasswordChange: user.force_password_change };
   });
 }
 
@@ -582,6 +586,55 @@ export async function changePassword(userId: number, newPassword: string, ctx?: 
     });
 
     await revokeAllTokensForUser(userId);
+  });
+}
+
+export async function forceChangePassword(userId: number, newPassword: string, ctx?: AuditContext): Promise<{ token: string; refreshToken: string }> {
+  return withAudit(ctx, (success, error) => ({
+    eventType: AuditEventType.PASSWORD_CHANGED,
+    action: "Changement de mot de passe forcé (premier login)",
+    success,
+    errorCode: success ? undefined : errorCodeFrom(error),
+    resourceType: "user",
+    resourceId: String(userId),
+  }), async () => {
+    if (newPassword.length < 8) {
+      throw new BadRequestError("Le mot de passe doit contenir au moins 8 caractères");
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: userId } }) as unknown as UserResult | null;
+
+    if (!user) {
+      throw new NotFoundError("Utilisateur");
+    }
+
+    if (!user.force_password_change) {
+      throw new BadRequestError("Aucun changement de mot de passe obligatoire en cours");
+    }
+
+    const isSamePassword = await bcrypt.compare(newPassword, user.password_hash!);
+    if (isSamePassword) {
+      throw new BadRequestError("Le nouveau mot de passe doit être différent de l'ancien");
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
+
+    const updated = await prisma.user.update({
+      where: { id: userId },
+      data: {
+        password_hash: hashedPassword,
+        force_password_change: false,
+      },
+    }) as unknown as UserResult;
+
+    await revokeAllTokensForUser(userId);
+
+    const fresh = await prisma.user.findUnique({ where: { id: userId } }) as unknown as UserResult;
+
+    return {
+      token: signAccessToken(fresh),
+      refreshToken: signRefreshToken(fresh),
+    };
   });
 }
 

@@ -11,6 +11,7 @@ import {
   confirmMfaSetup,
   verifyMfa,
   changePassword,
+  forceChangePassword,
   disableMfa,
   logout,
   refreshAccessToken,
@@ -82,10 +83,11 @@ export const handleLogin = asyncHandler(async (req: Request, res: Response) => {
 
   if (result.status === "mfa") {
     res.status(200).json({
-      message: "Veuillez fournir votre code de v├®rification MFA",
+      message: "Veuillez fournir votre code de vérification MFA",
       requireMfa: true,
       mfaToken: result.mfaToken,
       userId: result.userId,
+      forcePasswordChange: result.forcePasswordChange,
     });
     return;
   }
@@ -96,7 +98,7 @@ export const handleLogin = asyncHandler(async (req: Request, res: Response) => {
   }
 
   setRefreshTokenCookie(res, result.refreshToken);
-  res.json({ message: "Connexion r├®ussie", user: result.user, token: result.token, refreshToken: result.refreshToken });
+  res.json({ message: "Connexion r├®ussie", user: result.user, token: result.token, refreshToken: result.refreshToken, forcePasswordChange: result.forcePasswordChange });
 });
 
 export const handleConfirmMfaSetup = asyncHandler(async (req: Request, res: Response) => {
@@ -114,6 +116,7 @@ export const handleConfirmMfaSetup = asyncHandler(async (req: Request, res: Resp
     user: result.user,
     token: result.token,
     refreshToken: result.refreshToken,
+    forcePasswordChange: result.forcePasswordChange,
   });
 });
 
@@ -132,6 +135,7 @@ export const handleVerifyMfa = asyncHandler(async (req: Request, res: Response) 
     user: result.user,
     token: result.token,
     refreshToken: result.refreshToken,
+    forcePasswordChange: result.forcePasswordChange,
   });
 });
 
@@ -284,4 +288,31 @@ export const handleGetAuditLogs = asyncHandler(async (req: Request, res: Respons
   });
 
   res.json(result);
+});
+
+export const handleForceChangePassword = asyncHandler(async (req: Request, res: Response) => {
+  if (!req.user) {
+    res.status(401).json({ error: "Non authentifié" });
+    return;
+  }
+
+  const { newPassword } = req.body ?? {};
+
+  if (typeof newPassword !== "string" || !newPassword) {
+    res.status(400).json({ error: "newPassword est requis" });
+    return;
+  }
+
+  const result = await forceChangePassword(req.user.userId, newPassword, {
+    meta: buildAuditMeta(req),
+    actorUserId: req.user.userId,
+    actorEmail: req.user.email,
+  });
+
+  setRefreshTokenCookie(res, result.refreshToken);
+  res.json({
+    message: "Mot de passe modifié avec succès. Veuillez vous reconnecter.",
+    token: result.token,
+    refreshToken: result.refreshToken,
+  });
 });

@@ -1,8 +1,14 @@
 import prisma from "../lib/prisma.js";
 import bcrypt from "bcryptjs";
+import { randomBytes } from "node:crypto";
+
+function generatePassword(length = 16): string {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*";
+  const bytes = randomBytes(length);
+  return Array.from(bytes, (b) => chars[b % chars.length]).join("");
+}
 
 async function main() {
-  // Create user types
   await prisma.user_type.upsert({
     where: { id: 1 },
     update: { type: "superAdmin" },
@@ -15,14 +21,15 @@ async function main() {
     create: { id: 2, type: "admin" },
   });
 
-  // Create default superAdmin
-  const hashedPassword = await bcrypt.hash("SuperAdmin123!", 12);
+  const plainPassword = process.env.SUPERADMIN_PASSWORD || generatePassword();
+  const hashedPassword = await bcrypt.hash(plainPassword, 12);
 
   await prisma.user.upsert({
     where: { username: "superadmin" },
     update: {
       email: "superadmin@connecteo.mg",
       password_hash: hashedPassword,
+      force_password_change: true,
     },
     create: {
       email: "superadmin@connecteo.mg",
@@ -30,11 +37,18 @@ async function main() {
       password_hash: hashedPassword,
       user_type_id: 1,
       is_active: true,
+      force_password_change: true,
     },
   });
 
-  console.log("Seed completed successfully");
-  console.log("SuperAdmin credentials: superadmin@connecteo.mg / SuperAdmin123!");
+  console.log("═══════════════════════════════════════════════════════════");
+  console.log("  Seed terminé avec succès !");
+  console.log("═══════════════════════════════════════════════════════════");
+  console.log(`  Email    : superadmin@connecteo.mg`);
+  console.log(`  Password : ${plainPassword}`);
+  console.log("═══════════════════════════════════════════════════════════");
+  console.log("  ⚠  Vous DEVEZ changer ce mot de passe au premier login.");
+  console.log("═══════════════════════════════════════════════════════════");
 }
 
 main()
