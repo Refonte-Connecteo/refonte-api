@@ -6,13 +6,12 @@ COPY package.json package-lock.json ./
 
 RUN npm ci
 
+COPY src ./src/
 COPY prisma ./prisma/
 COPY prisma.config.ts ./
-RUN npx prisma generate
-
-COPY src ./src/
 COPY tsconfig.json ./
 
+RUN npx prisma generate
 RUN npm run build
 
 # --- Production stage ---
@@ -27,6 +26,7 @@ RUN npm ci --omit=dev
 
 COPY prisma ./prisma/
 COPY prisma.config.ts ./
+COPY src ./src/
 RUN npx prisma generate
 
 COPY --from=build /app/dist ./dist/
