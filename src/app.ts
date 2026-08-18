@@ -55,7 +55,7 @@ app.use((_req: Request, res: Response, next: NextFunction) => {
   next();
 });
 
-app.use(cors({ origin: env.FRONTEND_URL }));
+app.use(cors({ origin: env.FRONTEND_URL.replace(/\/+$/, "") }));
 
 if (process.env.NODE_ENV === "production") {
   app.use((req: Request, res: Response, next: NextFunction) => {
