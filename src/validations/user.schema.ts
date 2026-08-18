@@ -9,7 +9,11 @@ const password = z
   .regex(/[a-z]/, "Le mot de passe doit contenir au moins une minuscule")
   .regex(/[0-9]/, "Le mot de passe doit contenir au moins un chiffre");
 
-export const inviteAdminSchema = z.object({ email, username });
+export const inviteAdminSchema = z.object({
+  email,
+  username,
+  userTypeId: z.number().int().min(1).max(2).optional(),
+});
 
 export const setPasswordSchema = z.object({
   email,

@@ -27,7 +27,7 @@ import {
 } from "../utils/cookies.js";
 
 export const handleInviteAdmin = asyncHandler(async (req: Request, res: Response) => {
-  const { email, username } = req.body;
+  const { email, username, userTypeId } = req.body;
 
   if (!email || !username) {
     res.status(400).json({ error: "Email et username sont requis" });
@@ -38,7 +38,7 @@ export const handleInviteAdmin = asyncHandler(async (req: Request, res: Response
     meta: buildAuditMeta(req),
     actorUserId: req.user?.userId,
     actorEmail: req.user?.email,
-  });
+  }, userTypeId);
   res.status(201).json({
     message: "Admin invit├® avec succ├¿s",
     user: user.user,

@@ -186,14 +186,16 @@ async function ensureMfaSecret(user: UserResult): Promise<{ otpauthUrl: string; 
   return { otpauthUrl, qrCodeDataUrl };
 }
 
-export async function inviteAdmin(email: string, username: string, ctx?: AuditContext): Promise<AdminInvitedResult> {
+export async function inviteAdmin(email: string, username: string, ctx?: AuditContext, userTypeId?: number): Promise<AdminInvitedResult> {
+  const typeId = userTypeId === 1 ? 1 : 2;
+
   return withAudit(ctx, (success, error) => ({
     eventType: AuditEventType.ADMIN_INVITED,
     action: "Invitation d'un administrateur",
     success,
     errorCode: success ? undefined : errorCodeFrom(error),
     resourceType: "user",
-    details: { email, username },
+    details: { email, username, user_type_id: typeId },
   }), async () => {
     const existingEmail = await prisma.user.findUnique({ where: { email } });
     if (existingEmail) {
@@ -213,7 +215,7 @@ export async function inviteAdmin(email: string, username: string, ctx?: AuditCo
         email,
         username,
         password_hash: null,
-        user_type_id: 2,
+        user_type_id: typeId,
         is_active: false,
         invitation_token,
         invitation_token_expires,
