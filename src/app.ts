@@ -141,12 +141,12 @@ app.use((_req: Request, res: Response) => {
   sendError(res, 404, "Route introuvable", _req);
 });
 
-app.use((err: Error, req: Request, res: Response, _next: NextFunction) => {
+app.use(async (err: Error, req: Request, res: Response, _next: NextFunction) => {
   const meta = buildAuditMeta(req);
 
   if (err instanceof multer.MulterError) {
     const uploadStatusCode = err.code === "LIMIT_FILE_SIZE" ? 413 : 400;
-    void logAuditEvent({
+    await logAuditEvent({
       eventType: AuditEventType.FILE_UPLOAD_REJECTED,
       action: "Upload rejeté par Multer",
       success: false,
@@ -164,7 +164,7 @@ app.use((err: Error, req: Request, res: Response, _next: NextFunction) => {
 
   if (statusCode >= 500) {
     logger.error(err, "Erreur non gérée");
-    void logAuditEvent({
+    await logAuditEvent({
       eventType: AuditEventType.ERROR,
       action: "Erreur serveur",
       success: false,
@@ -181,7 +181,7 @@ app.use((err: Error, req: Request, res: Response, _next: NextFunction) => {
       (err as AppError & { auditLogged?: boolean }).auditLogged,
     );
     if (!auditLogged && (statusCode === 401 || statusCode === 403)) {
-      void logAuditEvent({
+      await logAuditEvent({
         eventType: AuditEventType.AUTH_FAILED,
         action: "Accès refusé",
         success: false,
