@@ -321,8 +321,8 @@ export async function login(email: string, password: string, ctx?: AuditContext)
     include: { user_type: true },
   }) as unknown as (UserResult & { user_type: { id: number; type: string } }) | null;
 
-  const logFailedLogin = (error: unknown): void => {
-    void logAuditEvent({
+  const logFailedLogin = async (error: unknown): Promise<void> => {
+    await logAuditEvent({
       eventType: AuditEventType.LOGIN_FAILED,
       action: "Tentative de connexion",
       success: false,
@@ -335,23 +335,23 @@ export async function login(email: string, password: string, ctx?: AuditContext)
   };
 
   if (!user) {
-    logFailedLogin(new UnauthorizedError("Email ou mot de passe incorrect"));
+    await logFailedLogin(new UnauthorizedError("Email ou mot de passe incorrect"));
     throw new UnauthorizedError("Email ou mot de passe incorrect");
   }
 
   if (!user.is_active) {
-    logFailedLogin(new ForbiddenError("Ce compte n'est pas actif"));
+    await logFailedLogin(new ForbiddenError("Ce compte n'est pas actif"));
     throw new ForbiddenError("Ce compte n'est pas actif");
   }
 
   if (!user.password_hash) {
-    logFailedLogin(new UnauthorizedError("Vous devez d'abord d├®finir votre mot de passe via le lien d'invitation"));
+    await logFailedLogin(new UnauthorizedError("Vous devez d'abord d├®finir votre mot de passe via le lien d'invitation"));
     throw new UnauthorizedError("Vous devez d'abord d├®finir votre mot de passe via le lien d'invitation");
   }
 
   const isValid = await bcrypt.compare(password, user.password_hash);
   if (!isValid) {
-    logFailedLogin(new UnauthorizedError("Email ou mot de passe incorrect"));
+    await logFailedLogin(new UnauthorizedError("Email ou mot de passe incorrect"));
     throw new UnauthorizedError("Email ou mot de passe incorrect");
   }
 

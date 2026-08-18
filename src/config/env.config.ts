@@ -5,6 +5,8 @@ import {
   assertStrongJwtSecret,
 } from "./secrets.config.js";
 
+export { assertStrongJwtSecret };
+
 const getEnv = (key: string, defaultValue?: string): string => {
   const value = process.env[key] ?? defaultValue;
   if (!value) {

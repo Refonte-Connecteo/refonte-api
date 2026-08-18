@@ -74,11 +74,11 @@ export function containsMaliciousInput(value: unknown): boolean {
  * params contiennent un payload XSS manifeste (balises script, gestionnaires
  * d'événements, schémas javascript:/data:, encodages HTML/URL).
  */
-export function rejectMaliciousInput(req: Request, res: Response, next: NextFunction): void {
+export async function rejectMaliciousInput(req: Request, res: Response, next: NextFunction): Promise<void> {
   const sources: unknown[] = [req.body, req.query, req.params];
 
   if (sources.some((source) => containsMaliciousInput(source))) {
-    void logAuditEvent({
+    await logAuditEvent({
       eventType: AuditEventType.VALIDATION_REJECTED,
       action: "Contenu malveillant (XSS) détecté",
       success: false,
