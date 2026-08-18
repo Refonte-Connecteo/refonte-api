@@ -38,32 +38,24 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: back/package-lock.json
 
       - name: Install dependencies
         run: npm ci
-        working-directory: back
 
       - name: Generate Prisma client
         run: npx prisma generate
-        working-directory: back
 
       - name: Run database migrations
         run: npx prisma migrate deploy
-        working-directory: back
 
       - name: Typecheck
         run: npx tsc --noEmit
-        working-directory: back
 
       - name: Lint
         run: npm run lint
-        working-directory: back
 
       - name: Tests
         run: npm test
-        working-directory: back
 
       - name: Build
         run: npm run build
-        working-directory: back
