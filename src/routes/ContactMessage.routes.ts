@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { body } from "express-validator";
 import { authenticate, requireAdmin } from "../middlewares/auth.middleware.js";
-import { validateRequest, stringSchema } from "../middlewares/validation.middleware.js";
+import { validateRequest, stringSchema, rejectUnknownBodyFields } from "../middlewares/validation.middleware.js";
 import {
   handleGetAllContactMessages,
   handleGetContactMessage,
@@ -22,8 +22,24 @@ const createContactMessageValidation = validateRequest([
   stringSchema("message", { max: 5000 }),
 ]);
 
+// Minimisation RGPD : seuls les champs strictement nécessaires sont acceptés.
+const CONTACT_MESSAGE_ALLOWED_FIELDS = [
+  "first_name",
+  "last_name",
+  "email",
+  "phone",
+  "company",
+  "country",
+  "message",
+] as const;
+
 // Public route - contact form submission
-router.post("/", createContactMessageValidation, handleCreateContactMessage);
+router.post(
+  "/",
+  rejectUnknownBodyFields(CONTACT_MESSAGE_ALLOWED_FIELDS),
+  createContactMessageValidation,
+  handleCreateContactMessage,
+);
 
 // Admin only routes
 router.get("/", authenticate, requireAdmin, handleGetAllContactMessages);

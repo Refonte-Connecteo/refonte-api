@@ -2,7 +2,7 @@ import { Router } from "express";
 import { body } from "express-validator";
 import { authenticate, requireAdmin } from "../middlewares/auth.middleware.js";
 import { validate } from "../middlewares/validate.js";
-import { validateRequest, stringSchema } from "../middlewares/validation.middleware.js";
+import { validateRequest, stringSchema, rejectUnknownBodyFields } from "../middlewares/validation.middleware.js";
 import { isValidStoredUrl } from "../validations/storedUrl.schema.js";
 import {
   handleGetAllApplications,
@@ -28,11 +28,27 @@ const createApplicationValidation = validateRequest([
   stringSchema("cover_letter", { optional: true, max: 5000 }),
 ]);
 
+// Minimisation RGPD : seuls les champs strictement nécessaires sont acceptés.
+const APPLICATION_ALLOWED_FIELDS = [
+  "job_id",
+  "first_name",
+  "last_name",
+  "email",
+  "phone",
+  "cv_url",
+  "cover_letter",
+] as const;
+
 // Public routes (affichage front - candidature publique)
 router.get("/", handleGetAllApplications);
 router.get("/job/:jobId", handleGetApplicationsByJobId);
 router.get("/:id", handleGetApplication);
-router.post("/", createApplicationValidation, handleCreateApplication);
+router.post(
+  "/",
+  rejectUnknownBodyFields(APPLICATION_ALLOWED_FIELDS),
+  createApplicationValidation,
+  handleCreateApplication,
+);
 
 // Admin only routes
 router.put("/:id", authenticate, requireAdmin, validate(applicationUpdateSchema), handleUpdateApplication);

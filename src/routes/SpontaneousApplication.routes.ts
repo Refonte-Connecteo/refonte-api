@@ -2,7 +2,7 @@ import { Router } from "express";
 import { body } from "express-validator";
 import { authenticate, requireAdmin } from "../middlewares/auth.middleware.js";
 import { validate } from "../middlewares/validate.js";
-import { validateRequest, stringSchema } from "../middlewares/validation.middleware.js";
+import { validateRequest, stringSchema, rejectUnknownBodyFields } from "../middlewares/validation.middleware.js";
 import { isValidStoredUrl } from "../validations/storedUrl.schema.js";
 import {
   handleGetAllSpontaneousApplications,
@@ -26,12 +26,27 @@ const createSpontaneousApplicationValidation = validateRequest([
   stringSchema("motivation", { optional: true, max: 5000 }),
 ]);
 
+// Minimisation RGPD : seuls les champs strictement nécessaires sont acceptés.
+const SPONTANEOUS_APPLICATION_ALLOWED_FIELDS = [
+  "first_name",
+  "last_name",
+  "email",
+  "phone",
+  "cv_url",
+  "motivation",
+] as const;
+
 // Public routes (affichage front - candidature spontanée publique)
 router.get("/", handleGetAllSpontaneousApplications);
 router.get("/:id", handleGetSpontaneousApplication);
 
 // Public route - submission
-router.post("/", createSpontaneousApplicationValidation, handleCreateSpontaneousApplication);
+router.post(
+  "/",
+  rejectUnknownBodyFields(SPONTANEOUS_APPLICATION_ALLOWED_FIELDS),
+  createSpontaneousApplicationValidation,
+  handleCreateSpontaneousApplication,
+);
 
 // Admin only routes
 router.put("/:id", authenticate, requireAdmin, validate(spontaneousApplicationUpdateSchema), handleUpdateSpontaneousApplication);

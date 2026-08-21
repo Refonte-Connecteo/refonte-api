@@ -143,6 +143,47 @@ export function validateRequest(validations: ValidationChain[]) {
   };
 }
 
+/**
+ * Minimisation des données (RGPD art. 5.1.c) : fabrique un middleware qui
+ * rejette (400) toute requête dont le body contient un champ non prévu.
+ * Seuls les noms des champs en trop sont journalisés, jamais leurs valeurs.
+ */
+export function rejectUnknownBodyFields(
+  allowedFields: readonly string[],
+): (req: Request, res: Response, next: NextFunction) => void {
+  const allowed = new Set(allowedFields);
+
+  return (req, res, next) => {
+    if (req.body === undefined || req.body === null || typeof req.body !== "object" || Array.isArray(req.body)) {
+      next();
+      return;
+    }
+
+    const unknownFields = Object.keys(req.body).filter((key) => !allowed.has(key));
+    if (unknownFields.length === 0) {
+      next();
+      return;
+    }
+
+    void logAuditEvent({
+      eventType: AuditEventType.VALIDATION_REJECTED,
+      action: "Champs non autorisés rejetés (minimisation)",
+      success: false,
+      statusCode: 400,
+      errorCode: "UNKNOWN_FIELDS",
+      details: { fields: unknownFields },
+      meta: buildAuditMeta(req),
+    });
+    res.status(400).json({
+      error: "Champs non autorisés détectés",
+      details: unknownFields.map((field) => ({
+        field,
+        message: `Champ non prévu : ${field}`,
+      })),
+    });
+  };
+}
+
 /** Chaîne de validation pour un champ texte strict (pas de balises HTML). */
 export function stringSchema(
   field: string,

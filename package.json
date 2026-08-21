@@ -10,6 +10,7 @@
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
     "typecheck": "tsc --noEmit",
+    "purge-data": "tsx scripts/purge-data.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },

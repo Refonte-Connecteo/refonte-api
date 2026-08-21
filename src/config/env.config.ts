@@ -34,6 +34,13 @@ export const env = {
     .map((domain) => domain.trim().toLowerCase())
     .filter(Boolean),
   AUDIT_RETENTION_DAYS: parseInt(process.env.AUDIT_RETENTION_DAYS || "7", 10),
+  // Politique de rétention RGPD (purge automatique des données expirées)
+  APPLICATION_RETENTION_MONTHS: parseInt(process.env.APPLICATION_RETENTION_MONTHS || "24", 10),
+  CONTACT_MESSAGE_RETENTION_MONTHS: parseInt(
+    process.env.CONTACT_MESSAGE_RETENTION_MONTHS || "12",
+    10,
+  ),
+  PAGE_VIEW_RETENTION_DAYS: parseInt(process.env.PAGE_VIEW_RETENTION_DAYS || "395", 10),
 };
 
 assertStrongJwtSecret(env.JWT_SECRET);
