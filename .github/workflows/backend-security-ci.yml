@@ -1,0 +1,380 @@
+# =============================================================================
+# Backend Security CI — SAST & DAST (refonte-api)
+# =============================================================================
+# Exigence d'audit couverte :
+#   « Les applications à risque élevé/moyen font l'objet d'analyses de code
+#    obligatoires (SAST) et de tests dynamiques (DAST) intégrés à la chaîne CI/CD. »
+#
+# Périmètre : dépôt BACKEND (API Express + Prisma/PostgreSQL).
+#   L'interface d'administration (SPA) vit dans un dépôt frontend séparé ;
+#   ce pipeline scanne tout ce que ce backend sert : API REST sous /api,
+#   endpoint de santé /health et fichiers statiques /uploads.
+#
+# SAST (statique)  :
+#   - Semgrep        : p/security-audit, p/owasp-top-10, p/nodejs, p/secrets
+#                      → verrou sur les findings de sévérité ERROR (≈ HIGH/CRITICAL)
+#   - Gitleaks       : détection de secrets/clés hardcodés (code + historique git)
+#                      → verrou sur toute fuite détectée
+#   - npm audit      : --audit-level=high → verrou sur HIGH/CRITICAL
+#   - Trivy (fs)     : vulnérabilités des paquets → verrou sur CRITICAL/HIGH
+#
+# DAST (dynamique) :
+#   - Build + migrations Prisma + démarrage réel de l'API contre une
+#     PostgreSQL éphémère (service container), puis scan OWASP ZAP :
+#       * zap-baseline.py par défaut (aucune spec OpenAPI dans le dépôt) ;
+#       * zap-api-scan.py automatiquement si docs/openapi.yaml apparaît
+#         (scan ACTIF spécifique API REST — recommandé à terme).
+#   - Verrou double : règles FAIL de .zap/rules.conf (régressions des en-têtes
+#     de sécurité, CORS, cookies) OU alerte ZAP de risque >= HIGH (riskcode 3).
+#
+# Artefacts : tous les rapports (JSON/SARIF/HTML/TXT) sont exportés en
+# artefacts du pipeline, même en cas d'échec (if: always()).
+# =============================================================================
+
+name: Backend Security CI (SAST & DAST)
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+  # Re-scan hebdomadaire : les CVE et règles évoluent même sans commit.
+  schedule:
+    - cron: "0 6 * * 1" # chaque lundi 06:00 UTC
+  workflow_dispatch: # déclenchement manuel depuis l'onglet Actions
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-security-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "20"
+  REPORTS_DIR: security-reports
+
+jobs:
+  # ===========================================================================
+  # 1. SAST — Analyse statique du code Node.js/TypeScript (Semgrep)
+  # ===========================================================================
+  sast-semgrep:
+    name: SAST — Semgrep (security-audit, owasp-top-10, nodejs, secrets)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container:
+      image: semgrep/semgrep:latest
+    steps:
+      - name: Checkout du dépôt
+        uses: actions/checkout@v4
+
+      - name: Scan statique Semgrep (règles OWASP + audit sécurité + Node.js + secrets)
+        run: |
+          mkdir -p "$REPORTS_DIR"
+          semgrep scan \
+            --config=p/security-audit \
+            --config=p/owasp-top-10 \
+            --config=p/nodejs \
+            --config=p/secrets \
+            --metrics=off \
+            --json --output="$REPORTS_DIR/semgrep-report.json" \
+            --sarif --output="$REPORTS_DIR/semgrep-report.sarif" \
+            --quiet || true
+        # Le scan ne bloque pas ici : le verrou sévérité-based est appliqué
+        # à l'étape suivante afin de toujours produire le rapport complet.
+
+      - name: Verrou SAST — échec si findings de sévérité ERROR (≈ HIGH/CRITICAL)
+        run: |
+          python3 - <<'PY'
+          import json, sys
+
+          with open("security-reports/semgrep-report.json", encoding="utf-8") as fh:
+              report = json.load(fh)
+
+          blocking = [
+              r for r in report.get("results", [])
+              if r.get("extra", {}).get("severity") == "ERROR"
+          ]
+
+          print(f"Findings Semgrep bloquants (ERROR) : {len(blocking)}")
+          for r in blocking:
+              meta = r.get("extra", {}).get("metadata", {})
+              print(f"  - [{r.get('check_id')}] {r.get('path')}:{r.get('start', {}).get('line')}"
+                    f" — {meta.get('cwe', '')}")
+          sys.exit(1 if blocking else 0)
+          PY
+
+      - name: Export du rapport Semgrep (artefact)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sast-semgrep-reports
+          path: ${{ env.REPORTS_DIR }}/
+          retention-days: 30
+
+  # ===========================================================================
+  # 2. SAST — Détection de secrets hardcodés (Gitleaks)
+  # ===========================================================================
+  sast-secrets:
+    name: SAST — Gitleaks (clés/secrets hardcodés)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout complet (historique inclus pour détecter les fuites passées)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Scan Gitleaks (bloque dès qu'un secret est détecté)
+        run: |
+          mkdir -p "$REPORTS_DIR"
+          docker run --rm -v "$PWD":/repo --workdir /repo \
+            zricethezav/gitleaks:v8.21.2 detect \
+              --source=/repo \
+              --no-banner \
+              --redact \
+              --report-format=json \
+              --report-path=/repo/$REPORTS_DIR/gitleaks-report.json
+        # gitleaks sort avec le code 1 si au moins un secret est trouvé :
+        # le job échoue donc nativement (verrou absolu, aucune tolérance).
+
+      - name: Export du rapport Gitleaks (artefact)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sast-gitleaks-report
+          path: ${{ env.REPORTS_DIR }}/
+          retention-days: 30
+
+  # ===========================================================================
+  # 3. SCA — Vulnérabilités des paquets npm (npm audit + Trivy)
+  # ===========================================================================
+  sca-dependencies:
+    name: SCA — npm audit & Trivy (dépendances)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout du dépôt
+        uses: actions/checkout@v4
+
+      - name: Installation de Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Installation des dépendances (lockfile strict)
+        run: npm ci
+
+      - name: npm audit — verrou sur HIGH et CRITICAL
+        run: |
+          set -o pipefail
+          npm audit --audit-level=high --json | tee "$REPORTS_DIR/npm-audit.json"
+
+      - name: Trivy FS — verrou sur CRITICAL/HIGH (rapport lisible)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+          ignore-unfixed: false
+          format: table
+          output: ${{ env.REPORTS_DIR }}/trivy-report.txt
+
+      - name: Trivy FS — rapport SARIF (traçabilité / outillage externe)
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln
+          format: sarif
+          output: ${{ env.REPORTS_DIR }}/trivy-results.sarif
+
+      - name: Export des rapports SCA (artefacts)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sca-dependencies-reports
+          path: ${{ env.REPORTS_DIR }}/
+          retention-days: 30
+
+  # ===========================================================================
+  # 4. DAST — Tests dynamiques OWASP ZAP sur l'API réellement démarrée
+  # ===========================================================================
+  dast-zap:
+    name: DAST — OWASP ZAP (API REST & surfaces servies)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    # BDD PostgreSQL éphémère dédiée au scan (équivalent docker-compose).
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: zap
+          POSTGRES_PASSWORD: dast_password
+          POSTGRES_DB: connecteo_dast
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U zap"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # Configuration minimale requise par src/config/env.config.ts.
+      # NODE_ENV != production => pas d'exigence TLS sur la connexion Postgres locale.
+      DATABASE_URL: postgresql://zap:dast_password@localhost:5432/connecteo_dast
+      JWT_SECRET: ci-dast-only-secret-key-0123456789abcdef0123456789abcdef
+      ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      NODE_ENV: test
+      HOST: 127.0.0.1
+      PORT: "3000"
+
+    steps:
+      - name: Checkout du dépôt
+        uses: actions/checkout@v4
+
+      - name: Installation de Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Installation des dépendances
+        run: npm ci
+
+      - name: Génération du client Prisma
+        run: npx prisma generate
+
+      - name: Migrations de schéma sur la BDD de test
+        run: npx prisma migrate deploy
+        # Optionnel : peupler la base pour élargir la surface scannée
+        # (npx prisma db seed).
+
+      - name: Démarrage de l'API en tâche de fond
+        run: |
+          mkdir -p "$REPORTS_DIR"
+          nohup npm start > "$REPORTS_DIR/server.log" 2>&1 &
+          echo $! > "$REPORTS_DIR/server.pid"
+          echo "API démarrée (PID $(cat "$REPORTS_DIR/server.pid"))"
+
+      - name: Attente de disponibilité de l'API (/health)
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:"$PORT"/health >/dev/null 2>&1; then
+              echo "API prête après ${i} tentative(s)."
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::L'API ne répond pas sur /health après 60 s."
+          cat "$REPORTS_DIR/server.log"
+          exit 1
+
+      # --network host : le conteneur ZAP joint l'API via 127.0.0.1 du runner.
+      # Le workspace est monté sur /zap/werk : .zap/rules.conf y est lu et les
+      # rapports HTML/JSON y sont écrits.
+      # -I : seules les règles FAIL de .zap/rules.conf font échouer le script ;
+      #      le verrou final est appliqué par l'étape suivante.
+      - name: Scan OWASP ZAP (baseline passif, ou api-scan actif si spec OpenAPI)
+        id: zap-scan
+        continue-on-error: true
+        run: |
+          # NB : -t n'est PAS dans COMMON_ARGS car sa valeur diffère selon la
+          # branche (URL cible pour baseline, fichier de spec pour api-scan).
+          COMMON_ARGS="-r $REPORTS_DIR/zap-dast-report.html \
+                       -J $REPORTS_DIR/zap-dast-report.json \
+                       -T 20 -I"
+
+          if [ -f docs/openapi.yaml ] || [ -f openapi.yaml ]; then
+            SPEC=$(ls docs/openapi.yaml openapi.yaml 2>/dev/null | head -n1)
+            echo "::notice::Spec OpenAPI détectée ($SPEC) — scan API ACTIF."
+            docker run --rm --network host -v "$PWD":/zap/werk/:rw \
+              ghcr.io/zaproxy/zaproxy:stable \
+              zap-api-scan.py -t "/zap/werk/$SPEC" -c .zap/rules.conf $COMMON_ARGS
+          else
+            echo "::notice::Aucune spec OpenAPI — scan baseline (passif)."
+            docker run --rm --network host -v "$PWD":/zap/werk/:rw \
+              ghcr.io/zaproxy/zaproxy:stable \
+              zap-baseline.py -t "http://127.0.0.1:${PORT}" -c .zap/rules.conf $COMMON_ARGS
+          fi
+
+      - name: Verrou DAST — échec si règle FAIL ou alerte HIGH/CRITICAL
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import json, os, sys
+
+          report_path = "security-reports/zap-dast-report.json"
+          scan_failed = os.environ.get("ZAP_STEP_FAILED") == "true"
+
+          blocking = []
+          if os.path.exists(report_path):
+              with open(report_path, encoding="utf-8") as fh:
+                  data = json.load(fh)
+              for site in data.get("site", []):
+                  for alert in site.get("alerts", []):
+                      risk = int(alert.get("riskcode") or 0)
+                      if risk >= 3:  # 3 = HIGH, 4 = CRITICAL (échelle ZAP)
+                          blocking.append(
+                              f"[{alert.get('pluginid')}] {alert.get('alert')}"
+                              f" — {alert.get('riskdesc')}"
+                          )
+          else:
+              print(f"::warning::Rapport ZAP introuvable : {report_path}")
+
+          print(f"Alertes ZAP de risque HIGH/CRITICAL : {len(blocking)}")
+          for item in blocking:
+              print(f"  - {item}")
+
+          if scan_failed:
+              print("::error::Règles FAIL déclenchées dans .zap/rules.conf "
+                    "(régression des en-têtes de sécurité / CORS / cookies).")
+              sys.exit(1)
+          sys.exit(1 if blocking else 0)
+          PY
+        env:
+          # Récupère l'issue de l'étape précédente malgré continue-on-error.
+          ZAP_STEP_FAILED: ${{ steps.zap-scan.outcome == 'failure' }}
+
+      - name: Arrêt propre de l'API
+        if: always()
+        run: |
+          if [ -f "$REPORTS_DIR/server.pid" ]; then
+            kill "$(cat "$REPORTS_DIR/server.pid")" 2>/dev/null || true
+          fi
+
+      - name: Export des rapports DAST (artefacts)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dast-zap-reports
+          path: |
+            ${{ env.REPORTS_DIR }}/zap-dast-report.html
+            ${{ env.REPORTS_DIR }}/zap-dast-report.json
+            ${{ env.REPORTS_DIR }}/server.log
+          retention-days: 30
+
+  # ===========================================================================
+  # 5. Synthèse — point de contrôle unique pour la protection de branche
+  # ===========================================================================
+  security-summary:
+    name: Verrou sécurité global
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [sast-semgrep, sast-secrets, sca-dependencies, dast-zap]
+    if: always()
+    steps:
+      - name: Vérification du verdict global SAST/DAST
+        run: |
+          RESULTS='${{ toJson(needs.*.result) }}'
+          echo "Résultats des jobs : $RESULTS"
+          if echo "$RESULTS" | grep -Eq 'failure|cancelled'; then
+            echo "::error::Un ou plusieurs contrôles de sécurité ont échoué — pipeline bloqué."
+            exit 1
+          fi
+          echo "Tous les contrôles SAST/DAST sont au vert."
