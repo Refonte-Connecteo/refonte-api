@@ -11,7 +11,7 @@ const getEnv = (key: string, defaultValue?: string): string => {
 
 export const JWT_ALGORITHM: Algorithm = "HS256";
 
-/** Le secret JWT doit contenir au moins 32 caractères cryptographiques (>= 256 bits). */
+/** Le secret JWT doit contenir au moins 32 caractères cryptographiques (>= 256 bit s). */
 export function assertStrongJwtSecret(secret: string): void {
   if (!secret || secret.length < 32) {
     throw new Error(
