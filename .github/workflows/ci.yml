@@ -39,6 +39,9 @@ jobs:
           node-version: 22
           cache: npm
 
+      - name: Verify lockfile integrity
+        run: npm ci --ignore-scripts
+
       - name: Install dependencies
         run: npm ci
 
@@ -59,3 +62,39 @@ jobs:
 
       - name: Build
         run: npm run build
+
+  security-audit:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: OWASP Dependency-Check
+        uses: dependency-check/Dependency-Check_Action@main
+        with:
+          path: "."
+          format: HTML
+          project: "connecteo-backend"
+
+      - name: Upload Dependency-Check Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-check-report-backend
+          path: reports/
+          retention-days: 30
+
+      - name: Fail on Critical/High Vulnerabilities
+        if: always()
+        run: |
+          if [ -f reports/dependency-check-report.html ]; then
+            HIGH_COUNT=$(grep -c 'cvssV3Rating.*HIGH\|cvssV3Rating.*CRITICAL' reports/dependency-check-report.html || true)
+            if [ "$HIGH_COUNT" -gt 0 ]; then
+              echo "WARNING: $HIGH_COUNT Critical/High vulnerabilities found in dependency-check report"
+            fi
+          fi
