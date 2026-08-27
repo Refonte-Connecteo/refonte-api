@@ -19,6 +19,9 @@ FROM node:22-slim
 
 RUN apt-get update -y && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
 
+RUN groupadd --gid 1001 connecteo && \
+    useradd --uid 1001 --gid connecteo --shell /bin/sh --create-home connecteo
+
 WORKDIR /app
 
 COPY package.json package-lock.json ./
@@ -30,6 +33,10 @@ COPY src ./src/
 RUN npx prisma generate
 
 COPY --from=build /app/dist ./dist/
+
+RUN mkdir -p uploads && chown -R connecteo:connecteo /app
+
+USER connecteo
 
 EXPOSE 3000
 

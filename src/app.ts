@@ -81,16 +81,29 @@ app.get("/health", (_req: Request, res: Response) => {
   res.json({ status: "ok" });
 });
 
-const IMAGE_EXTENSIONS = [".jpg", ".jpeg", ".png", ".webp", ".gif"];
+const SERVED_EXTENSIONS = new Set([
+  ".jpg", ".jpeg", ".png", ".webp", ".gif",
+  ".pdf", ".doc", ".docx",
+]);
+
+const IMAGE_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp", ".gif"]);
 
 app.use(
   "/uploads",
+  (req: Request, res: Response, next: NextFunction) => {
+    const ext = path.extname(req.url).toLowerCase();
+    if (!SERVED_EXTENSIONS.has(ext)) {
+      res.status(403).json({ error: "Type de fichier non autorisé" });
+      return;
+    }
+    next();
+  },
   express.static(path.resolve("uploads"), {
     dotfiles: "deny",
     index: false,
     setHeaders: (res, filePath) => {
       const ext = path.extname(filePath).toLowerCase();
-      if (!IMAGE_EXTENSIONS.includes(ext)) {
+      if (!IMAGE_EXTENSIONS.has(ext)) {
         res.setHeader(
           "Content-Disposition",
           `attachment; filename="${path.basename(filePath)}"`,
