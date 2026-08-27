@@ -74,12 +74,23 @@ jobs:
           distribution: temurin
           java-version: "21"
 
-      - name: OWASP Dependency-Check
-        uses: dependency-check/Dependency-Check_Action@main
-        with:
-          path: "."
-          format: HTML
-          project: "connecteo-backend"
+      - name: Install OWASP Dependency-Check
+        run: |
+          DC_VERSION="11.1.1"
+          wget -q "https://github.com/jeremylong/DependencyCheck/releases/download/v${DC_VERSION}/dependency-check-${DC_VERSION}-release.zip" -O dc.zip
+          unzip -q dc.zip -d /opt
+          echo "/opt/dependency-check-${DC_VERSION}/bin" >> $GITHUB_PATH
+          rm dc.zip
+
+      - name: Run OWASP Dependency-Check
+        run: |
+          dependency-check \
+            --project "connecteo-backend" \
+            --scan . \
+            --format HTML \
+            --format JSON \
+            --out reports \
+            --noupdate
 
       - name: Upload Dependency-Check Report
         if: always()
@@ -92,9 +103,19 @@ jobs:
       - name: Fail on Critical/High Vulnerabilities
         if: always()
         run: |
-          if [ -f reports/dependency-check-report.html ]; then
-            HIGH_COUNT=$(grep -c 'cvssV3Rating.*HIGH\|cvssV3Rating.*CRITICAL' reports/dependency-check-report.html || true)
-            if [ "$HIGH_COUNT" -gt 0 ]; then
-              echo "WARNING: $HIGH_COUNT Critical/High vulnerabilities found in dependency-check report"
+          if [ -f reports/dependency-check-report.json ]; then
+            CRITICAL=$(python3 -c "
+          import json, sys
+          data = json.load(open('reports/dependency-check-report.json'))
+          deps = data.get('dependencies', [])
+          crits = [d for d in deps if any(
+            v.get('severity') in ('CRITICAL', 'HIGH')
+            for v in d.get('vulnerabilities', [])
+          )]
+          print(len(crits))
+          " 2>/dev/null || echo "0")
+            if [ "$CRITICAL" -gt 0 ]; then
+              echo "::error::Found $CRITICAL dependencies with Critical/High vulnerabilities"
+              exit 1
             fi
           fi
