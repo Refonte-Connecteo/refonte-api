@@ -28,7 +28,7 @@ export const env = {
   JWT_ALGORITHM,
   JWT_ACCESS_EXPIRES_IN: process.env.JWT_ACCESS_EXPIRES_IN || "5m",
   JWT_REFRESH_EXPIRES_IN: process.env.JWT_REFRESH_EXPIRES_IN || "7d",
-  FRONTEND_URL: process.env.FRONTEND_URL || "http://localhost:5173",
+  FRONTEND_URL: process.env.FRONTEND_URL || "http://localhost:3001",
   ALLOWED_REDIRECT_DOMAINS: (process.env.ALLOWED_REDIRECT_DOMAINS || "")
     .split(",")
     .map((domain) => domain.trim().toLowerCase())
