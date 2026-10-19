@@ -1,5 +1,11 @@
 import type { Algorithm } from "jsonwebtoken";
 import { assertEncryptionKey } from "../utils/crypto.utils.js";
+import {
+  assertNoSecretReuse,
+  assertStrongJwtSecret,
+} from "./secrets.config.js";
+
+export { assertStrongJwtSecret };
 
 const getEnv = (key: string, defaultValue?: string): string => {
   const value = process.env[key] ?? defaultValue;
@@ -10,16 +16,6 @@ const getEnv = (key: string, defaultValue?: string): string => {
 };
 
 export const JWT_ALGORITHM: Algorithm = "HS256";
-
-/** Le secret JWT doit contenir au moins 32 caractères cryptographiques (>= 256 bit s). */
-export function assertStrongJwtSecret(secret: string): void {
-  if (!secret || secret.length < 32) {
-    throw new Error(
-      "JWT_SECRET is too weak: it must contain at least 32 cryptographic characters (>= 256 bits). " +
-        "Generate one with: node -e \"console.log(require('crypto').randomBytes(32).toString('base64url'))\"",
-    );
-  }
-}
 
 export const env = {
   PORT: parseInt(process.env.PORT || "3000", 10),
@@ -45,3 +41,4 @@ export const env = {
 
 assertStrongJwtSecret(env.JWT_SECRET);
 assertEncryptionKey(process.env.ENCRYPTION_KEY ?? "");
+assertNoSecretReuse(env.JWT_SECRET, process.env.ENCRYPTION_KEY ?? "");

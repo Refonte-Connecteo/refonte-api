@@ -79,11 +79,12 @@ export interface UserResult {
   is_active: boolean;
   invitation_token: string | null;
   invitation_token_expires: Date | null;
+  created_at: Date;
   mfa_secret: string | null;
   mfa_enabled: boolean;
   mfa_recovery_codes: string[];
   token_version: number;
-  created_at: Date;
+  force_password_change: boolean;
   last_login_at: Date | null;
 }
 
@@ -110,9 +111,9 @@ export interface AdminInvitedResult {
 }
 
 export type LoginResult =
-  | { status: "mfa"; requireMfa: true; mfaToken: string; userId: number }
+  | { status: "mfa"; requireMfa: true; mfaToken: string; userId: number; forcePasswordChange: boolean }
   | (MfaSetupResult & { status: "mfa-setup" })
-  | { status: "success"; requireMfa: false; user: SafeUser; token: string; refreshToken: string };
+  | { status: "success"; requireMfa: false; user: SafeUser; token: string; refreshToken: string; forcePasswordChange: boolean };
 
 export type JwtPayload = {
   userId: number;
@@ -133,6 +134,7 @@ export type AuthResult = {
   user: SafeUser;
   token: string;
   refreshToken: string;
+  forcePasswordChange: boolean;
 };
 
 export type MfaTokenPayload = {
@@ -184,14 +186,16 @@ async function ensureMfaSecret(user: UserResult): Promise<{ otpauthUrl: string; 
   return { otpauthUrl, qrCodeDataUrl };
 }
 
-export async function inviteAdmin(email: string, username: string, ctx?: AuditContext): Promise<AdminInvitedResult> {
+export async function inviteAdmin(email: string, username: string, ctx?: AuditContext, userTypeId?: number): Promise<AdminInvitedResult> {
+  const typeId = userTypeId === 1 ? 1 : 2;
+
   return withAudit(ctx, (success, error) => ({
     eventType: AuditEventType.ADMIN_INVITED,
     action: "Invitation d'un administrateur",
     success,
     errorCode: success ? undefined : errorCodeFrom(error),
     resourceType: "user",
-    details: { email, username },
+    details: { email, username, user_type_id: typeId },
   }), async () => {
     const existingEmail = await prisma.user.findUnique({ where: { email } });
     if (existingEmail) {
@@ -211,7 +215,7 @@ export async function inviteAdmin(email: string, username: string, ctx?: AuditCo
         email,
         username,
         password_hash: null,
-        user_type_id: 2,
+        user_type_id: typeId,
         is_active: false,
         invitation_token,
         invitation_token_expires,
@@ -319,8 +323,8 @@ export async function login(email: string, password: string, ctx?: AuditContext)
     include: { user_type: true },
   }) as unknown as (UserResult & { user_type: { id: number; type: string } }) | null;
 
-  const logFailedLogin = (error: unknown): void => {
-    void logAuditEvent({
+  const logFailedLogin = async (error: unknown): Promise<void> => {
+    await logAuditEvent({
       eventType: AuditEventType.LOGIN_FAILED,
       action: "Tentative de connexion",
       success: false,
@@ -333,23 +337,23 @@ export async function login(email: string, password: string, ctx?: AuditContext)
   };
 
   if (!user) {
-    logFailedLogin(new UnauthorizedError("Email ou mot de passe incorrect"));
+    await logFailedLogin(new UnauthorizedError("Email ou mot de passe incorrect"));
     throw new UnauthorizedError("Email ou mot de passe incorrect");
   }
 
   if (!user.is_active) {
-    logFailedLogin(new ForbiddenError("Ce compte n'est pas actif"));
+    await logFailedLogin(new ForbiddenError("Ce compte n'est pas actif"));
     throw new ForbiddenError("Ce compte n'est pas actif");
   }
 
   if (!user.password_hash) {
-    logFailedLogin(new UnauthorizedError("Vous devez d'abord d├®finir votre mot de passe via le lien d'invitation"));
+    await logFailedLogin(new UnauthorizedError("Vous devez d'abord d├®finir votre mot de passe via le lien d'invitation"));
     throw new UnauthorizedError("Vous devez d'abord d├®finir votre mot de passe via le lien d'invitation");
   }
 
   const isValid = await bcrypt.compare(password, user.password_hash);
   if (!isValid) {
-    logFailedLogin(new UnauthorizedError("Email ou mot de passe incorrect"));
+    await logFailedLogin(new UnauthorizedError("Email ou mot de passe incorrect"));
     throw new UnauthorizedError("Email ou mot de passe incorrect");
   }
 
@@ -369,6 +373,7 @@ export async function login(email: string, password: string, ctx?: AuditContext)
       requireMfa: true,
       mfaToken: signMfaToken(user.id),
       userId: user.id,
+      forcePasswordChange: user.force_password_change,
     };
   }
 
@@ -436,6 +441,7 @@ export async function confirmMfaSetup(mfaToken: string, code: string, ctx?: Audi
       user: toSafeUser(updated),
       token: signAccessToken(updated),
       refreshToken: signRefreshToken(updated),
+      forcePasswordChange: updated.force_password_change,
     };
   });
 }
@@ -470,7 +476,7 @@ export async function verifyMfa(mfaToken: string, code: string, ctx?: AuditConte
       data: { last_login_at: new Date() },
     });
 
-    return { user: toSafeUser(user), token: signAccessToken(user), refreshToken: signRefreshToken(user) };
+    return { user: toSafeUser(user), token: signAccessToken(user), refreshToken: signRefreshToken(user), forcePasswordChange: user.force_password_change };
   });
 }
 
@@ -582,6 +588,55 @@ export async function changePassword(userId: number, newPassword: string, ctx?: 
     });
 
     await revokeAllTokensForUser(userId);
+  });
+}
+
+export async function forceChangePassword(userId: number, newPassword: string, ctx?: AuditContext): Promise<{ token: string; refreshToken: string }> {
+  return withAudit(ctx, (success, error) => ({
+    eventType: AuditEventType.PASSWORD_CHANGED,
+    action: "Changement de mot de passe forcé (premier login)",
+    success,
+    errorCode: success ? undefined : errorCodeFrom(error),
+    resourceType: "user",
+    resourceId: String(userId),
+  }), async () => {
+    if (newPassword.length < 8) {
+      throw new BadRequestError("Le mot de passe doit contenir au moins 8 caractères");
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: userId } }) as unknown as UserResult | null;
+
+    if (!user) {
+      throw new NotFoundError("Utilisateur");
+    }
+
+    if (!user.force_password_change) {
+      throw new BadRequestError("Aucun changement de mot de passe obligatoire en cours");
+    }
+
+    const isSamePassword = await bcrypt.compare(newPassword, user.password_hash!);
+    if (isSamePassword) {
+      throw new BadRequestError("Le nouveau mot de passe doit être différent de l'ancien");
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
+
+    const updated = await prisma.user.update({
+      where: { id: userId },
+      data: {
+        password_hash: hashedPassword,
+        force_password_change: false,
+      },
+    }) as unknown as UserResult;
+
+    await revokeAllTokensForUser(userId);
+
+    const fresh = await prisma.user.findUnique({ where: { id: userId } }) as unknown as UserResult;
+
+    return {
+      token: signAccessToken(fresh),
+      refreshToken: signRefreshToken(fresh),
+    };
   });
 }
 

@@ -168,6 +168,31 @@ export function requireAdmin(req: Request, _res: Response, next: NextFunction): 
   next();
 }
 
+export function forcePasswordChange(req: Request, _res: Response, next: NextFunction): void {
+  if (!req.user) {
+    throw new UnauthorizedError("Non authentifié");
+  }
+
+  prisma.user
+    .findUnique({ where: { id: req.user.userId } })
+    .then((user) => {
+      if (!user) {
+        throw new UnauthorizedError("Utilisateur introuvable");
+      }
+
+      if (user.force_password_change) {
+        _res.status(403).json({
+          error: "Changement de mot de passe obligatoire",
+          forcePasswordChange: true,
+        });
+        return;
+      }
+
+      next();
+    })
+    .catch(next);
+}
+
 export function asyncHandler(fn: (req: Request, res: Response, next: NextFunction) => Promise<void>) {
   return (req: Request, res: Response, next: NextFunction): void => {
     Promise.resolve(fn(req, res, next)).catch(next);

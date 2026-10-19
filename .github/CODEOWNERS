@@ -1,0 +1,32 @@
+# Code Owners - Backend
+# Define code review responsibilities for the backend repository
+
+# Configuration & Security (requires security team review)
+*.env*                @equipe-secu
+src/config/           @equipe-secu
+src/middlewares/      @equipe-secu
+src/utils/crypto*     @equipe-secu
+Dockerfile            @equipe-secu
+docker-compose*       @equipe-secu
+render.yaml           @equipe-secu
+sql/                  @equipe-secu
+
+# Database & ORM
+prisma/               @equipe-dev
+src/databases/        @equipe-dev
+
+# Business Logic
+src/controllers/      @equipe-dev
+src/services/         @equipe-dev
+src/routes/           @equipe-dev
+src/validations/      @equipe-dev
+
+# Tests
+tests/                @equipe-dev
+
+# CI/CD & Hooks
+.github/              @equipe-dev
+.githooks/            @equipe-secu
+
+# Default: require review from at least one team member
+*                     @equipe-dev

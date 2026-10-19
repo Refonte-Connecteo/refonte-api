@@ -2,6 +2,7 @@ import app from './app.js';
 import { env } from './config/env.config.js';
 import { startAuditPurgeJob } from './jobs/auditPurge.job.js';
 import { startOrphanSweepJob } from './jobs/orphanFiles.job.js';
+import { startKeepAliveJob } from './jobs/keepAlive.job.js';
 
 const port = env.PORT;
 
@@ -14,6 +15,7 @@ const server = app.listen(port, host, () => {
   console.log(`Server running on http://${host}:${port}`);
   startAuditPurgeJob();
   startOrphanSweepJob();
+  startKeepAliveJob();
 });
 
 server.on("error", (err: NodeJS.ErrnoException) => {

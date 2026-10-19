@@ -79,7 +79,7 @@ describe("Algorithme JWT (HS256 minimum)", () => {
 
   it("exige un JWT_SECRET d'au moins 32 caractères cryptographiques", () => {
     expect(() => assertStrongJwtSecret("clef-trop-courte")).toThrow();
-    expect(() => assertStrongJwtSecret("a".repeat(32))).not.toThrow();
+    expect(() => assertStrongJwtSecret("k8T!x9#mPq2vLwNzY7cRjF4sBhEgUa!!")).not.toThrow();
   });
 });
 

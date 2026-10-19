@@ -21,6 +21,11 @@ const app = express();
 
 app.disable("x-powered-by");
 
+app.use((_req: Request, res: Response, next: NextFunction) => {
+  res.removeHeader("Server");
+  next();
+});
+
 app.use(
   helmet({
     contentSecurityPolicy: {
@@ -50,7 +55,18 @@ app.use((_req: Request, res: Response, next: NextFunction) => {
   next();
 });
 
-app.use(cors({ origin: env.FRONTEND_URL }));
+app.use(cors({ origin: env.FRONTEND_URL.replace(/\/+$/, "") }));
+
+if (process.env.NODE_ENV === "production") {
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    if (req.method === "TRACE") {
+      res.status(405).json({ error: "Méthode non autorisée" });
+      return;
+    }
+    next();
+  });
+}
+
 app.use(requestContext);
 app.use(pinoHttp({ logger, autoLogging: false }) as express.RequestHandler);
 app.use(globalLimiter);
@@ -65,16 +81,29 @@ app.get("/health", (_req: Request, res: Response) => {
   res.json({ status: "ok" });
 });
 
-const IMAGE_EXTENSIONS = [".jpg", ".jpeg", ".png", ".webp", ".gif"];
+const SERVED_EXTENSIONS = new Set([
+  ".jpg", ".jpeg", ".png", ".webp", ".gif",
+  ".pdf", ".doc", ".docx",
+]);
+
+const IMAGE_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp", ".gif"]);
 
 app.use(
   "/uploads",
+  (req: Request, res: Response, next: NextFunction) => {
+    const ext = path.extname(req.url).toLowerCase();
+    if (!SERVED_EXTENSIONS.has(ext)) {
+      res.status(403).json({ error: "Type de fichier non autorisé" });
+      return;
+    }
+    next();
+  },
   express.static(path.resolve("uploads"), {
     dotfiles: "deny",
     index: false,
     setHeaders: (res, filePath) => {
       const ext = path.extname(filePath).toLowerCase();
-      if (!IMAGE_EXTENSIONS.includes(ext)) {
+      if (!IMAGE_EXTENSIONS.has(ext)) {
         res.setHeader(
           "Content-Disposition",
           `attachment; filename="${path.basename(filePath)}"`,
@@ -104,16 +133,33 @@ app.use("/api", routes);
 app.use("/api/upload", uploadRoutes);
 app.use("/api/analytics", analyticsRoutes);
 
+function wantsHtml(req: Request): boolean {
+  const accept = req.get("Accept") ?? "";
+  return accept.includes("text/html");
+}
+
+function sendError(res: Response, statusCode: number, message: string, req: Request): void {
+  if (wantsHtml(req)) {
+    const title = `${statusCode}`;
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.status(statusCode).send(
+      `<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><title>${title}</title></head><body><h1>${title} — ${message}</h1></body></html>`,
+    );
+    return;
+  }
+  res.status(statusCode).json({ error: message });
+}
+
 app.use((_req: Request, res: Response) => {
-  res.status(404).json({ error: "Route introuvable" });
+  sendError(res, 404, "Route introuvable", _req);
 });
 
-app.use((err: Error, req: Request, res: Response, _next: NextFunction) => {
+app.use(async (err: Error, req: Request, res: Response, _next: NextFunction) => {
   const meta = buildAuditMeta(req);
 
   if (err instanceof multer.MulterError) {
     const uploadStatusCode = err.code === "LIMIT_FILE_SIZE" ? 413 : 400;
-    void logAuditEvent({
+    await logAuditEvent({
       eventType: AuditEventType.FILE_UPLOAD_REJECTED,
       action: "Upload rejeté par Multer",
       success: false,
@@ -122,12 +168,8 @@ app.use((err: Error, req: Request, res: Response, _next: NextFunction) => {
       details: { code: err.code },
       meta,
     });
-    res.status(uploadStatusCode).json({
-      error:
-        uploadStatusCode === 413
-          ? "Fichier trop volumineux"
-          : "Fichier invalide",
-    });
+    sendError(res, uploadStatusCode,
+      uploadStatusCode === 413 ? "Fichier trop volumineux" : "Fichier invalide", req);
     return;
   }
 
@@ -135,7 +177,7 @@ app.use((err: Error, req: Request, res: Response, _next: NextFunction) => {
 
   if (statusCode >= 500) {
     logger.error(err, "Erreur non gérée");
-    void logAuditEvent({
+    await logAuditEvent({
       eventType: AuditEventType.ERROR,
       action: "Erreur serveur",
       success: false,
@@ -143,7 +185,7 @@ app.use((err: Error, req: Request, res: Response, _next: NextFunction) => {
       errorCode: errorCodeFrom(err),
       meta,
     });
-    res.status(500).json({ error: "Erreur interne du serveur" });
+    sendError(res, 500, "Erreur interne du serveur", req);
     return;
   }
 
@@ -152,7 +194,7 @@ app.use((err: Error, req: Request, res: Response, _next: NextFunction) => {
       (err as AppError & { auditLogged?: boolean }).auditLogged,
     );
     if (!auditLogged && (statusCode === 401 || statusCode === 403)) {
-      void logAuditEvent({
+      await logAuditEvent({
         eventType: AuditEventType.AUTH_FAILED,
         action: "Accès refusé",
         success: false,
@@ -163,7 +205,7 @@ app.use((err: Error, req: Request, res: Response, _next: NextFunction) => {
         meta,
       });
     }
-    res.status(statusCode).json({ error: err.message });
+    sendError(res, statusCode, err.message, req);
     return;
   }
 });

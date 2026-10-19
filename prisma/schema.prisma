@@ -32,9 +32,10 @@ model user {
   mfa_secret               String?
   mfa_enabled              Boolean   @default(false)
   mfa_recovery_codes       String[]  @default([])
-  token_version            Int       @default(0)
-  last_login_at            DateTime?
-  user_type                user_type @relation(fields: [user_type_id], references: [id])
+  force_password_change Boolean   @default(false)
+  token_version        Int       @default(0)
+  last_login_at        DateTime?
+  user_type            user_type @relation(fields: [user_type_id], references: [id])
 }
 
 /// JWT révoqués (blacklist) — un token inscrit ici ne peut plus être utilisé côté serveur

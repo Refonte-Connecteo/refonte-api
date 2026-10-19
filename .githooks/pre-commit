@@ -1,0 +1,32 @@
+#!/bin/sh
+# Garde-fou pre-commit : bloque tout commit contenant un fichier .env
+# (hors .env.example) ou un motif de secret dans le contenu indexe.
+# Installe via : git config core.hooksPath .githooks
+
+echo "[guard-secrets] Verification des fichiers indexes..."
+
+bad=0
+
+# 1) Fichiers .env indexes (hors .env.example)
+staged=$(git diff --cached --name-only --diff-filter=ACMR | grep -Ei '(^|/)\.env($|\.)' | grep -Eiv '\.env\.example')
+if [ -n "$staged" ]; then
+    echo "ERREUR : tentative de commit d'un fichier .env :" >&2
+    echo "$staged" >&2
+    echo "Le fichier .env contient des secrets et ne doit JAMAIS etre versionne." >&2
+    echo "Remplacez-le par .env.example (valeurs factices)." >&2
+    bad=1
+fi
+
+# 2) Motifs de secrets dans le contenu indexe (hors .env.example)
+if git diff --cached -U0 -- . ':(exclude)*.env.example' | grep -Ei 'BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_\-]{35}|sk-[A-Za-z0-9]{20,}|gh[pousr]_[A-Za-z0-9]{20,}|(JWT_SECRET|ENCRYPTION_KEY|SECRET_ACCESS_KEY|SECRET_KEY)=[^=]{16,}' | grep -q .; then
+    echo "ERREUR : motif de secret detecte (cle privee, JWT, S3/AWS, cle API, token GitHub) dans les fichiers indexes." >&2
+    bad=1
+fi
+
+if [ "$bad" -ne 0 ]; then
+    echo "Commit REFUSE." >&2
+    exit 1
+fi
+
+echo "[guard-secrets] OK : aucun .env ni secret detecte."
+exit 0

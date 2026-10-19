@@ -4,6 +4,7 @@ import {
   authenticate,
   requireReauthentication,
   requireSuperAdmin,
+  forcePasswordChange,
 } from "../middlewares/auth.middleware.js";
 import { authLimiter } from "../middlewares/rateLimit.js";
 import { validateRequest } from "../middlewares/validation.middleware.js";
@@ -23,6 +24,7 @@ import {
   handleChangePassword,
   handleDisableMfa,
   handleGetAuditLogs,
+  handleForceChangePassword,
 } from "../controllers/user.controller.js";
 import ceoMessageRouter from "./Ceomessage.routes.js";
 import heroSlideRouter from "./HeroSlide.routes.js";
@@ -100,14 +102,17 @@ router.post("/auth/logout", authenticate, handleLogout);
 router.post("/auth/change-password", authenticate, requireReauthentication, handleChangePassword);
 router.post("/auth/mfa/disable", authenticate, requireReauthentication, handleDisableMfa);
 
+// Force change password — accessible when force_password_change is active
+router.post("/auth/force-change-password", authenticate, handleForceChangePassword);
+
 // SuperAdmin only routes
-router.post("/admin/invite", authenticate, requireSuperAdmin, handleInviteAdmin);
-router.get("/admin", authenticate, requireSuperAdmin, handleGetAllAdmins);
-router.delete("/admin/:id/deactivate", authenticate, requireSuperAdmin, handleDeactivateAdmin);
-router.delete("/admin/:id", authenticate, requireSuperAdmin, handleDeleteAdmin);
+router.post("/admin/invite", authenticate, requireSuperAdmin, forcePasswordChange, handleInviteAdmin);
+router.get("/admin", authenticate, requireSuperAdmin, forcePasswordChange, handleGetAllAdmins);
+router.delete("/admin/:id/deactivate", authenticate, requireSuperAdmin, forcePasswordChange, handleDeactivateAdmin);
+router.delete("/admin/:id", authenticate, requireSuperAdmin, forcePasswordChange, handleDeleteAdmin);
 
 // Piste d'audit (consultation réservée superAdmin)
-router.get("/admin/audit-logs", authenticate, requireSuperAdmin, handleGetAuditLogs);
+router.get("/admin/audit-logs", authenticate, requireSuperAdmin, forcePasswordChange, handleGetAuditLogs);
 
 // Content management routes
 router.use("/ceomessage", ceoMessageRouter);
