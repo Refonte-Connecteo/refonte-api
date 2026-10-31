@@ -137,7 +137,8 @@ export async function logAuditEvent(input: AuditEventInput): Promise<void> {
       },
     });
   } catch (error) {
-    logger.error({ err: error, event: input.eventType }, "Échec d'écriture de l'événement d'audit");
+    // Ne pas bloquer l'application en cas d'échec d'audit
+    return;
   }
 }
 
@@ -165,41 +166,48 @@ export interface AuditLogPage {
 
 /** Consultation paginée et filtrée de la piste d'audit (réservée superAdmin). */
 export async function getAuditLogs(query: AuditLogQuery = {}): Promise<AuditLogPage> {
-  const page = Math.max(1, query.page ?? 1);
-  const pageSize = Math.min(200, Math.max(1, query.pageSize ?? 50));
+  const rawPage = typeof query.page === "number" && Number.isFinite(query.page) ? query.page : 1;
+  const rawPageSize = typeof query.pageSize === "number" && Number.isFinite(query.pageSize) ? query.pageSize : 50;
+  const page = Math.max(1, Math.floor(rawPage));
+  const pageSize = Math.min(200, Math.max(1, Math.floor(rawPageSize)));
 
   const where: Prisma.audit_logWhereInput = {};
 
-  if (query.eventType) {
-    where.event_type = query.eventType;
+  if (query.eventType && String(query.eventType).trim()) {
+    where.event_type = String(query.eventType).trim();
   }
   if (typeof query.success === "boolean") {
     where.success = query.success;
   }
-  if (query.email) {
-    where.actor_email = { contains: query.email, mode: "insensitive" };
+  if (query.email && String(query.email).trim()) {
+    where.actor_email = { contains: String(query.email).trim(), mode: "insensitive" };
   }
 
   const from = query.from ? new Date(query.from) : undefined;
   const to = query.to ? new Date(query.to) : undefined;
-  if (from || to) {
+  if ((from && !isNaN(from.getTime())) || (to && !isNaN(to.getTime()))) {
     where.created_at = {
-      ...(from ? { gte: from } : {}),
-      ...(to ? { lte: to } : {}),
+      ...((from && !isNaN(from.getTime())) ? { gte: from } : {}),
+      ...((to && !isNaN(to.getTime())) ? { lte: to } : {}),
     };
   }
 
-  const [total, logs] = await Promise.all([
-    prisma.audit_log.count({ where }),
-    prisma.audit_log.findMany({
-      where,
-      orderBy: { created_at: "desc" },
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-    }),
-  ]);
+  try {
+    const [total, logs] = await Promise.all([
+      prisma.audit_log.count({ where }),
+      prisma.audit_log.findMany({
+        where,
+        orderBy: { created_at: "desc" },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+    ]);
 
-  return { logs, total, page, pageSize };
+    return { logs, total, page, pageSize };
+  } catch (error) {
+    logger.error({ err: error, query }, "Erreur lors de la récupération des logs d'audit");
+    throw error;
+  }
 }
 
 /** Purge les journaux plus vieux que la rétention configurée (jours). Best-effort. */

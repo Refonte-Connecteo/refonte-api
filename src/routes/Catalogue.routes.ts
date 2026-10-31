@@ -4,6 +4,7 @@ import { validate } from "../middlewares/validate.js";
 import {
   handleGetAllCatalogues,
   handleGetCatalogue,
+  handleGetImpactReport,
   handleCreateCatalogue,
   handleUpdateCatalogue,
   handleDeleteCatalogue,
@@ -14,6 +15,7 @@ const router = Router();
 
 // Public routes (affichage front)
 router.get("/", handleGetAllCatalogues);
+router.get("/impact", handleGetImpactReport);
 router.get("/:id", handleGetCatalogue);
 
 // Admin only routes

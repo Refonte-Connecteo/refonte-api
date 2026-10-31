@@ -71,8 +71,12 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE "user" TO connecteo_http;
 -- revoked_token : SELECT, INSERT, DELETE (blacklist JWT, pas de UPDATE)
 GRANT SELECT, INSERT, DELETE ON TABLE revoked_token TO connecteo_http;
 
--- audit_log : INSERT uniquement (piste d'audit append-only)
-GRANT INSERT ON TABLE audit_log TO connecteo_http;
+-- audit_log : SELECT + INSERT + DELETE
+--   - INSERT : journalisation des evenements
+--   - SELECT : consultation de la piste d'audit par le superAdmin
+--   - DELETE : purge automatique selon la retention (AUDIT_RETENTION_DAYS)
+--   Pas de UPDATE : la piste reste append-only.
+GRANT SELECT, INSERT, DELETE ON TABLE audit_log TO connecteo_http;
 
 -- hero_slide : CRUD complet (gestion du carousel CMS)
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE hero_slide TO connecteo_http;

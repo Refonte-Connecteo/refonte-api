@@ -277,14 +277,17 @@ export const handleGetAuditLogs = asyncHandler(async (req: Request, res: Respons
     to,
   } = req.query as Record<string, string | undefined>;
 
+  const pageNum = page !== undefined ? parseInt(page, 10) : undefined;
+  const pageSizeNum = pageSize !== undefined ? parseInt(pageSize, 10) : undefined;
+
   const result = await getAuditLogs({
-    page: page !== undefined ? parseInt(page, 10) : undefined,
-    pageSize: pageSize !== undefined ? parseInt(pageSize, 10) : undefined,
-    eventType,
+    page: Number.isFinite(pageNum as number) ? (pageNum as number) : undefined,
+    pageSize: Number.isFinite(pageSizeNum as number) ? (pageSizeNum as number) : undefined,
+    eventType: eventType || undefined,
     success: success === undefined ? undefined : success === "true",
-    email,
-    from,
-    to,
+    email: email || undefined,
+    from: from || undefined,
+    to: to || undefined,
   });
 
   res.json(result);

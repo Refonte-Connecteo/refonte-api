@@ -119,11 +119,15 @@ model reference {
 
 /// S4 — Downloadable service catalogue (lead magnet)
 model catalogue {
-  id             Int      @id @default(autoincrement())
-  title          String
-  file_url       String
-  is_lead_magnet Boolean  @default(true)
-  uploaded_at    DateTime @default(now())
+  id              Int      @id @default(autoincrement())
+  title           String
+  file_url        String
+  is_lead_magnet  Boolean  @default(true)
+  year            Int?
+  is_impact_report Boolean @default(false)
+  uploaded_at     DateTime @default(now())
+
+  @@index([is_impact_report])
 }
 
 /// S5 — Job postings

@@ -4,6 +4,7 @@ import { BadRequestError } from "../errors/index.js";
 import {
   getAllCatalogues,
   getCatalogueById,
+  getImpactReport,
   createCatalogue,
   updateCatalogue,
   deleteCatalogue,
@@ -28,13 +29,20 @@ export const handleGetCatalogue = asyncHandler(async (req: Request, res: Respons
     res.json({ catalogue });
 });
 
+export const handleGetImpactReport = asyncHandler(async (_req: Request, res: Response) => {
+    const catalogue = await getImpactReport();
+    res.json({ catalogue });
+});
+
 export const handleCreateCatalogue = asyncHandler(async (req: Request, res: Response) => {
-  const { title, file_url, is_lead_magnet } = req.body;
+  const { title, file_url, is_lead_magnet, year, is_impact_report } = req.body;
  
   const catalogue = await createCatalogue({
     title,
     file_url,
     is_lead_magnet,
+    year,
+    is_impact_report,
   });
  
   res.status(201).json({ message: "Catalogue créé avec succès", catalogue });
@@ -42,8 +50,8 @@ export const handleCreateCatalogue = asyncHandler(async (req: Request, res: Resp
  
 export const handleUpdateCatalogue = asyncHandler(async (req: Request, res: Response) => {
   const id = parseId(req.params.id as string);
-  const { title, file_url, is_lead_magnet } = req.body;
-  const catalogue = await updateCatalogue(id, { title, file_url, is_lead_magnet });
+  const { title, file_url, is_lead_magnet, year, is_impact_report } = req.body;
+  const catalogue = await updateCatalogue(id, { title, file_url, is_lead_magnet, year, is_impact_report });
   res.json({ message: "Catalogue mis à jour avec succès", catalogue });
 });
  

@@ -38,13 +38,37 @@ export async function createCatalogue(data: CatalogueInput): Promise<catalogue>
     if (!data.file_url) {
         throw new BadRequestError("File URL is required");
     }
-    return prisma.catalogue.create({ data });
+
+    return prisma.$transaction(async (tx) => {
+        if (data.is_impact_report) {
+            await tx.catalogue.updateMany({
+                where: { is_impact_report: true },
+                data: { is_impact_report: false },
+            });
+        }
+        return tx.catalogue.create({ data });
+    });
 }
 
 export async function updateCatalogue(id: number, data: Partial<CatalogueInput>): Promise<catalogue> {
     await getCatalogueById(id);
 
-    return prisma.catalogue.update({ where: {id}, data});
+    return prisma.$transaction(async (tx) => {
+        if (data.is_impact_report === true) {
+            await tx.catalogue.updateMany({
+                where: { is_impact_report: true, id: { not: id } },
+                data: { is_impact_report: false },
+            });
+        }
+        return tx.catalogue.update({ where: { id }, data });
+    });
+}
+
+export async function getImpactReport(): Promise<catalogue | null> {
+    return prisma.catalogue.findFirst({
+        where: { is_impact_report: true },
+        orderBy: { uploaded_at: "desc" },
+    });
 }
 
 export async function deleteCatalogue(id: number): Promise<void> {
