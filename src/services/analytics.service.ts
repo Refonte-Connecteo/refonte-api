@@ -1,4 +1,5 @@
 import prisma from "../lib/prisma.js";
+import { env } from "../config/env.config.js";
 import { BadRequestError } from "../errors/index.js";
 
 export type DeviceKind = "desktop" | "mobile" | "tablet";
@@ -43,11 +44,24 @@ export function inferDevice(userAgent?: string | null): DeviceKind {
   return "desktop";
 }
 
-/** Extrait le hostname d'un referrer (ne stocke jamais l'URL complète). */
+const BOT_USER_AGENT = /bot|crawl|spider|slurp|headless|lighthouse|pingdom|uptime|curl|wget|python-requests/i;
+
+/** Robots et outils automatiques : ils ne sont pas des visiteurs. */
+export function isBotUserAgent(userAgent?: string | null): boolean {
+  return !!userAgent && BOT_USER_AGENT.test(userAgent);
+}
+
+const stripWww = (host: string) => host.replace(/^www\./, "");
+
+/**
+ * Extrait le hostname d'un referrer (ne stocke jamais l'URL complète).
+ * Une navigation interne au site n'est pas une source de trafic.
+ */
 export function hostFromReferrer(referrer?: string | null): string | null {
   if (!referrer) return null;
   try {
-    return new URL(referrer).hostname;
+    const host = new URL(referrer).hostname;
+    return stripWww(host) === stripWww(new URL(env.FRONTEND_URL).hostname) ? null : host;
   } catch {
     return null;
   }
@@ -63,6 +77,7 @@ export async function recordPageView(input: RecordPageViewInput): Promise<void> 
   if (!visitorId || visitorId.length > 128) {
     throw new BadRequestError("visitorId invalide");
   }
+  if (isBotUserAgent(input.userAgent)) return;
 
   await prisma.page_view.create({
     data: {
@@ -168,7 +183,7 @@ export async function getDashboardSummary(rangeDays = 30): Promise<DashboardSumm
       prisma.application.count({ where: { submitted_at: { gte: since } } }),
       prisma.spontaneous_application.count({ where: { submitted_at: { gte: since } } }),
       prisma.contact_message.count({ where: { submitted_at: { gte: since } } }),
-      prisma.contact_message.count({ where: { submitted_at: { gte: since }, is_read: false } }),
+      prisma.contact_message.count({ where: { is_read: false } }),
     ]);
 
   return {

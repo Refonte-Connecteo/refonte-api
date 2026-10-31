@@ -24,7 +24,7 @@ const NIR_PATTERN =
   /\b[1278][ .\-/]?\d{2}[ .\-/]?(?:0[1-9]|1[0-2])[ .\-/]?(?:\d{2}|2[aAbB])(?:[ .\-/]?\d{3}){2}[ .\-/]?\d{2}\b/g;
 
 /** Carte bancaire groupée : 4 blocs de 4 chiffres (espaces, points ou tirets). */
-const CREDIT_CARD_GROUPED_PATTERN = /\b(?:\d{4}[ .\-]){3}\d{4}\b/g;
+const CREDIT_CARD_GROUPED_PATTERN = /\b(?:\d{4}[ .-]){3}\d{4}\b/g;
 
 /** Carte bancaire continue : 13 à 19 chiffres, retenue uniquement si valide (Luhn). */
 const CREDIT_CARD_CONTINUOUS_PATTERN = /\b\d{13,19}\b/g;
@@ -37,7 +37,7 @@ const CREDIT_CARD_CONTINUOUS_PATTERN = /\b\d{13,19}\b/g;
 const PHONE_INTERNATIONAL_PATTERN = /(?<![\d+])(?:\+|00)\d{1,3}(?:[ .\-()]{0,2}\d){8,12}/g;
 
 /** Téléphone français national : 0X XX XX XX XX (séparateurs optionnels). */
-const PHONE_FR_PATTERN = /(?<![\d+.])0[1-9](?:[ .\-]?\d{2}){4}(?!\d)/g;
+const PHONE_FR_PATTERN = /(?<![\d+.])0[1-9](?:[ .-]?\d{2}){4}(?!\d)/g;
 
 /** Algorithme de Luhn : valide une suite de chiffres (cartes bancaires). */
 function passesLuhn(digits: string): boolean {

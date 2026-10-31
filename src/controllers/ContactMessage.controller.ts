@@ -1,6 +1,6 @@
 import type { Request, Response } from "express";
 import { asyncHandler } from "../middlewares/auth.middleware.js";
-import { BadRequestError } from "../errors/index.js";
+import { parseId } from "../utils/parseId.js";
 import {
   getAllContactMessages,
   getContactMessageById,
@@ -9,13 +9,6 @@ import {
   deleteContactMessage,
 } from "../services/ContactMessage.services.js";
 
-function parseId(rawId: string): number {
-    const id = parseInt(rawId, 10);
-    if (isNaN(id)) {
-        throw new BadRequestError("Invalid ID format");
-    }   
-    return id;
-}
 
 export const handleGetAllContactMessages = asyncHandler(async (req: Request, res: Response) => {
     const contactMessages = await getAllContactMessages();

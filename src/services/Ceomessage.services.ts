@@ -2,14 +2,7 @@
 import prisma from "../lib/prisma.js";
 
 import type { Prisma, ceo_message } from "../generated/prisma/client.js";
-import { env } from "../config/env.config.js";
-import {
-  NotFoundError,
-  UnauthorizedError,
-  ForbiddenError,
-  ConflictError,
-  BadRequestError,
-} from "../errors/index.js";
+import { NotFoundError, BadRequestError } from "../errors/index.js";
 
 export type CeoMessageInput = Omit<Prisma.ceo_messageCreateInput, "id" | "updated_at">;
 

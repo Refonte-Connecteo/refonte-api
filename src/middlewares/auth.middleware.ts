@@ -95,6 +95,22 @@ export function authenticate(req: Request, _res: Response, next: NextFunction): 
     .catch(next);
 }
 
+/**
+ * Pour les routes publiques qui montrent plus de contenu à un admin (brouillons).
+ * Sans jeton, la requête reste publique. Le site public passe `publicFlag=true` :
+ * un ancien jeton resté dans le navigateur ne doit pas le rediriger vers le login.
+ */
+export function optionalAuthenticate(publicFlag?: string) {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    const isPublicRequest = publicFlag !== undefined && req.query[publicFlag] === "true";
+    if (isPublicRequest || !req.headers.authorization) {
+      next();
+      return;
+    }
+    authenticate(req, res, next);
+  };
+}
+
 export function requireReauthentication(req: Request, _res: Response, next: NextFunction): void {
   if (!req.user) {
     next(new UnauthorizedError("Non authentifié"));

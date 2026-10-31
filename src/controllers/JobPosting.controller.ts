@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { asyncHandler } from "../middlewares/auth.middleware.js";
-import { BadRequestError } from "../errors/index.js";
+import { parseId } from "../utils/parseId.js";
+import { NotFoundError } from "../errors/index.js";
 import {
   getAllJobPostings,
   getJobPostingById,
@@ -9,16 +10,9 @@ import {
   deleteJobPosting,
 } from "../services/JobPosting.services.js";
 
-function parseId(rawId: string): number {
-    const id = parseInt(rawId, 10);
-    if (isNaN(id)) {
-        throw new BadRequestError("Invalid ID format");
-    }   
-    return id;
-}
 
 export const handleGetAllJobPostings = asyncHandler(async (req: Request, res: Response) => {
-    const onlyActive = req.query.onlyActive === "true";
+    const onlyActive = !req.user || req.query.onlyActive === "true";
     const jobPostings = await getAllJobPostings(onlyActive);
     res.json({ jobPostings });
 });
@@ -26,6 +20,7 @@ export const handleGetAllJobPostings = asyncHandler(async (req: Request, res: Re
 export const handleGetJobPosting = asyncHandler(async (req: Request, res: Response) => {
     const id = parseId(req.params.id as string);
     const jobPosting = await getJobPostingById(id);
+    if (!req.user && !jobPosting.is_active) throw new NotFoundError(`Job posting with id ${id} not found`);
     res.json({ jobPosting });
 });
 

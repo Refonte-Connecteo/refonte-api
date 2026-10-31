@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { authenticate, requireAdmin } from "../middlewares/auth.middleware.js";
+import { authenticate, optionalAuthenticate, requireAdmin } from "../middlewares/auth.middleware.js";
 import { validate } from "../middlewares/validate.js";
 import {
   handleGetAllArticles,
@@ -13,8 +13,8 @@ import { articleCreateSchema, articleUpdateSchema } from "../validations/article
 const router = Router();
 
 // Public routes (affichage front)
-router.get("/", handleGetAllArticles);
-router.get("/:id", handleGetArticle);
+router.get("/", optionalAuthenticate("onlyPublished"), handleGetAllArticles);
+router.get("/:id", optionalAuthenticate(), handleGetArticle);
 
 // Admin only routes
 router.post("/", authenticate, requireAdmin, validate(articleCreateSchema), handleCreateArticle);

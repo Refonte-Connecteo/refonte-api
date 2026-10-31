@@ -1,6 +1,6 @@
 import type { Request, Response } from "express";
 import { asyncHandler } from "../middlewares/auth.middleware.js";
-import { BadRequestError } from "../errors/index.js";
+import { parseId } from "../utils/parseId.js";
 import {
   getAllCatalogues,
   getCatalogueById,
@@ -10,13 +10,6 @@ import {
   deleteCatalogue,
 } from "../services/Catalogue.services.js";
 
-function parseId(rawId: string): number {
-    const id = parseInt(rawId, 10);
-    if (isNaN(id)) {
-        throw new BadRequestError("Invalid ID format");
-    }   
-    return id;
-}
 
 export const handleGetAllCatalogues = asyncHandler(async (req: Request, res: Response) => {
     const catalogues = await getAllCatalogues();

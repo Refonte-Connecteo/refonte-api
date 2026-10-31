@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { authenticate, requireAdmin } from "../middlewares/auth.middleware.js";
+import { authenticate, optionalAuthenticate, requireAdmin } from "../middlewares/auth.middleware.js";
 import { uploadImage, processUploadedFile, persistLocalFile } from "../middlewares/upload.js";
 import { IMAGE_FILE_KINDS } from "../utils/fileType.js";
 import { validate } from "../middlewares/validate.js";
@@ -15,7 +15,7 @@ import { heroSlideCreateSchema, heroSlideUpdateSchema } from "../validations/her
 const router = Router();
 
 // Public routes (affichage front)
-router.get("/", handleGetAllHeroSlides);
+router.get("/", optionalAuthenticate("onlyActive"), handleGetAllHeroSlides);
 router.get("/:id", handleGetHeroSlide);
 
 // Admin only routes

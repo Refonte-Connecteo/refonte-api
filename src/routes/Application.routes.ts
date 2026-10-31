@@ -22,7 +22,7 @@ const createApplicationValidation = validateRequest([
   stringSchema("last_name", { max: 100 }),
   body("email").trim().isEmail().withMessage("Email invalide"),
   stringSchema("phone", { optional: true, max: 30 }),
-  stringSchema("cv_url", { optional: true, max: 500 })
+  stringSchema("cv_url", { max: 500 })
     .custom(isValidStoredUrl)
     .withMessage("cv_url invalide (chemin /uploads, /images ou URL http(s))"),
   stringSchema("cover_letter", { optional: true, max: 5000 }),
@@ -39,10 +39,12 @@ const APPLICATION_ALLOWED_FIELDS = [
   "cover_letter",
 ] as const;
 
-// Public routes (affichage front - candidature publique)
-router.get("/", handleGetAllApplications);
-router.get("/job/:jobId", handleGetApplicationsByJobId);
-router.get("/:id", handleGetApplication);
+// Données personnelles : lecture réservée aux administrateurs
+router.get("/", authenticate, requireAdmin, handleGetAllApplications);
+router.get("/job/:jobId", authenticate, requireAdmin, handleGetApplicationsByJobId);
+router.get("/:id", authenticate, requireAdmin, handleGetApplication);
+
+// Public route - submission
 router.post(
   "/",
   rejectUnknownBodyFields(APPLICATION_ALLOWED_FIELDS),

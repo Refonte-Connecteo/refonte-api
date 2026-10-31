@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { authenticate, requireAdmin } from "../middlewares/auth.middleware.js";
+import { authenticate, optionalAuthenticate, requireAdmin } from "../middlewares/auth.middleware.js";
 import { validate } from "../middlewares/validate.js";
 import {
   handleGetAllReferences,
@@ -13,7 +13,7 @@ import { referenceCreateSchema, referenceUpdateSchema } from "../validations/ref
 const router = Router();
 
 // Public routes (affichage front)
-router.get("/", handleGetAllReferences);
+router.get("/", optionalAuthenticate("onlyActive"), handleGetAllReferences);
 router.get("/:id", handleGetReference);
 
 // Admin only routes

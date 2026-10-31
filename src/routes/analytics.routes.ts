@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { body } from "express-validator";
-import { authenticate, requireSuperAdmin } from "../middlewares/auth.middleware.js";
+import { authenticate, forcePasswordChange, requireSuperAdmin } from "../middlewares/auth.middleware.js";
 import { validateRequest } from "../middlewares/validation.middleware.js";
 import { pageViewLimiter } from "../middlewares/rateLimit.js";
 import {
@@ -28,6 +28,6 @@ const pageViewValidation = validateRequest([
 router.post("/page-view", pageViewLimiter, pageViewValidation, handleRecordPageView);
 
 // SuperAdmin uniquement
-router.get("/summary", authenticate, requireSuperAdmin, handleGetDashboardSummary);
+router.get("/summary", authenticate, requireSuperAdmin, forcePasswordChange, handleGetDashboardSummary);
 
 export default router;

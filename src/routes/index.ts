@@ -84,14 +84,14 @@ router.post("/admin/set-password", authLimiter, setPasswordValidation, handleSet
 router.post("/admin/check-pending", authLimiter, checkPendingValidation, handleCheckPending);
 
 // Auth routes (MFA onboarding + verification)
-router.post("/auth/login", loginValidation, handleLogin);
-router.post("/auth/mfa/confirm-setup", mfaValidation, handleConfirmMfaSetup);
-router.post("/auth/mfa/verify", mfaValidation, handleVerifyMfa);
-router.post("/auth/refresh", refreshValidation, handleRefresh);
+router.post("/auth/login", authLimiter, loginValidation, handleLogin);
+router.post("/auth/mfa/confirm-setup", authLimiter, mfaValidation, handleConfirmMfaSetup);
+router.post("/auth/mfa/verify", authLimiter, mfaValidation, handleVerifyMfa);
+router.post("/auth/refresh", authLimiter, refreshValidation, handleRefresh);
 
 // Admin aliases for the MFA endpoints
-router.post("/admin/mfa/confirm-setup", handleConfirmMfaSetup);
-router.post("/admin/mfa/verify", handleVerifyMfa);
+router.post("/admin/mfa/confirm-setup", authLimiter, mfaValidation, handleConfirmMfaSetup);
+router.post("/admin/mfa/verify", authLimiter, mfaValidation, handleVerifyMfa);
 
 // Authenticated user routes
 router.get("/admin/me", authenticate, handleGetProfile);

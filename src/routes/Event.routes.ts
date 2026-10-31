@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { authenticate, requireAdmin } from "../middlewares/auth.middleware.js";
+import { authenticate, optionalAuthenticate, requireAdmin } from "../middlewares/auth.middleware.js";
 import { validate } from "../middlewares/validate.js";
 import {
   handleGetAllEvents,
@@ -13,8 +13,8 @@ import { eventCreateSchema, eventUpdateSchema } from "../validations/event.schem
 const router = Router();
 
 // Public routes (affichage front)
-router.get("/", handleGetAllEvents);
-router.get("/:id", handleGetEvent);
+router.get("/", optionalAuthenticate("onlyPublished"), handleGetAllEvents);
+router.get("/:id", optionalAuthenticate(), handleGetEvent);
 
 // Admin only routes
 router.post("/", authenticate, requireAdmin, validate(eventCreateSchema), handleCreateEvent);

@@ -1,6 +1,6 @@
 import type { Request, Response } from "express";
 import { asyncHandler } from "../middlewares/auth.middleware.js";
-import { BadRequestError } from "../errors/index.js";
+import { parseId } from "../utils/parseId.js";
 import {
   getAllReferences,
   getReferenceById,
@@ -9,16 +9,9 @@ import {
   deleteReference,
 } from "../services/Reference.services.js";
 
-function parseId(rawId: string): number {
-    const id = parseInt(rawId, 10);
-    if (isNaN(id)) {
-        throw new BadRequestError("Invalid ID format");
-    }   
-    return id;
-}
 
 export const handleGetAllReferences = asyncHandler(async (req: Request, res: Response) => {
-    const onlyActive = req.query.onlyActive === "true";
+    const onlyActive = !req.user || req.query.onlyActive === "true";
     const references = await getAllReferences(onlyActive);
     res.json({ references });
 });

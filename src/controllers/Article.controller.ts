@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { asyncHandler } from "../middlewares/auth.middleware.js";
-import { BadRequestError } from "../errors/index.js";
+import { parseId } from "../utils/parseId.js";
+import { NotFoundError } from "../errors/index.js";
 import {
   getAllArticles,
   getArticleById,
@@ -9,16 +10,9 @@ import {
   deleteArticle,
 } from "../services/Article.services.js";
 
-function parseId(rawId: string): number {
-    const id = parseInt(rawId, 10);
-    if (isNaN(id)) {
-        throw new BadRequestError("Invalid ID format");
-    }   
-    return id;
-}
 
 export const handleGetAllArticles = asyncHandler(async (req: Request, res: Response) => {
-    const onlyPublished = req.query.onlyPublished === "true";
+    const onlyPublished = !req.user || req.query.onlyPublished === "true";
     const articles = await getAllArticles(onlyPublished);
     res.json({ articles });
 });
@@ -26,6 +20,7 @@ export const handleGetAllArticles = asyncHandler(async (req: Request, res: Respo
 export const handleGetArticle = asyncHandler(async (req: Request, res: Response) => {
     const id = parseId(req.params.id as string);
     const article = await getArticleById(id);
+    if (!req.user && !article.is_published) throw new NotFoundError(`Article with id ${id} not found`);
     res.json({ article });
 });
 

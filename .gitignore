@@ -149,3 +149,6 @@ vite.config.ts.timestamp-*
 
 # Database dumps
 *.dump
+
+# Sauvegardes de base : jamais dans Git
+*.dump

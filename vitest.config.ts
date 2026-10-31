@@ -8,6 +8,8 @@ export default defineConfig({
     globalSetup: ["./tests/global-setup.ts"],
     setupFiles: ["./tests/setup-env.ts"],
     fileParallelism: false,
+    // bcrypt (coût 12) peut dépasser les 5 s par défaut sur plusieurs hachages.
+    testTimeout: 20000,
     hookTimeout: 120000,
     env: {
       DATABASE_URL: TEST_DATABASE_URL,

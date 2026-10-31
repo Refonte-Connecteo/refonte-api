@@ -20,7 +20,7 @@ const createSpontaneousApplicationValidation = validateRequest([
   stringSchema("last_name", { max: 100 }),
   body("email").trim().isEmail().withMessage("Email invalide"),
   stringSchema("phone", { optional: true, max: 30 }),
-  stringSchema("cv_url", { optional: true, max: 500 })
+  stringSchema("cv_url", { max: 500 })
     .custom(isValidStoredUrl)
     .withMessage("cv_url invalide (chemin /uploads, /images ou URL http(s))"),
   stringSchema("motivation", { optional: true, max: 5000 }),
@@ -36,9 +36,9 @@ const SPONTANEOUS_APPLICATION_ALLOWED_FIELDS = [
   "motivation",
 ] as const;
 
-// Public routes (affichage front - candidature spontanée publique)
-router.get("/", handleGetAllSpontaneousApplications);
-router.get("/:id", handleGetSpontaneousApplication);
+// Données personnelles : lecture réservée aux administrateurs
+router.get("/", authenticate, requireAdmin, handleGetAllSpontaneousApplications);
+router.get("/:id", authenticate, requireAdmin, handleGetSpontaneousApplication);
 
 // Public route - submission
 router.post(

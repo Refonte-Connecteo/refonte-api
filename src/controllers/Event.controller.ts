@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { asyncHandler } from "../middlewares/auth.middleware.js";
-import { BadRequestError } from "../errors/index.js";
+import { parseId } from "../utils/parseId.js";
+import { NotFoundError } from "../errors/index.js";
 import {
   getAllEvents,
   getEventById,
@@ -9,16 +10,9 @@ import {
   deleteEvent,
 } from "../services/Event.services.js";
 
-function parseId(rawId: string): number {
-    const id = parseInt(rawId, 10);
-    if (isNaN(id)) {
-        throw new BadRequestError("Invalid ID format");
-    }   
-    return id;
-}
 
 export const handleGetAllEvents = asyncHandler(async (req: Request, res: Response) => {
-    const onlyPublished = req.query.onlyPublished === "true";
+    const onlyPublished = !req.user || req.query.onlyPublished === "true";
     const events = await getAllEvents(onlyPublished);
     res.json({ events });
 });
@@ -26,6 +20,7 @@ export const handleGetAllEvents = asyncHandler(async (req: Request, res: Respons
 export const handleGetEvent = asyncHandler(async (req: Request, res: Response) => {
     const id = parseId(req.params.id as string);
     const event = await getEventById(id);
+    if (!req.user && !event.is_published) throw new NotFoundError(`Event with id ${id} not found`);
     res.json({ event });
 });
 

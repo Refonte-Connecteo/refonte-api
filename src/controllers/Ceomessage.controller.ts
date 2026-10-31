@@ -1,6 +1,6 @@
 import type { Request, Response } from "express";
 import { asyncHandler } from "../middlewares/auth.middleware.js";
-import { BadRequestError } from "../errors/index.js";
+import { parseId } from "../utils/parseId.js";
 import {
   getAllCeoMessages,
   getLatestCeoMessage,
@@ -10,13 +10,6 @@ import {
   deleteCeoMessage,
 } from "../services/Ceomessage.services.js";
 
-function parseId(rawId: string): number {
-  const id = parseInt(rawId, 10);
-  if (isNaN(id)) {
-    throw new BadRequestError("ID invalide");
-  }
-  return id;
-}
 
 export const handleGetAllCeoMessages = asyncHandler(async (_req: Request, res: Response) => {
   const messages = await getAllCeoMessages();

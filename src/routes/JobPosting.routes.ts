@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { authenticate, requireAdmin } from "../middlewares/auth.middleware.js";
+import { authenticate, optionalAuthenticate, requireAdmin } from "../middlewares/auth.middleware.js";
 import { validate } from "../middlewares/validate.js";
 import {
   handleGetAllJobPostings,
@@ -13,8 +13,8 @@ import { jobPostingCreateSchema, jobPostingUpdateSchema } from "../validations/j
 const router = Router();
 
 // Public routes (affichage front)
-router.get("/", handleGetAllJobPostings);
-router.get("/:id", handleGetJobPosting);
+router.get("/", optionalAuthenticate("onlyActive"), handleGetAllJobPostings);
+router.get("/:id", optionalAuthenticate(), handleGetJobPosting);
 
 // Admin only routes
 router.post("/", authenticate, requireAdmin, validate(jobPostingCreateSchema), handleCreateJobPosting);

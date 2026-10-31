@@ -2,14 +2,7 @@
 import prisma from "../lib/prisma.js";
 
 import type { Prisma, reference } from "../generated/prisma/client.js";
-import { env } from "../config/env.config.js";
-import {
-  NotFoundError,
-  UnauthorizedError,
-  ForbiddenError,
-  ConflictError,
-  BadRequestError,
-} from "../errors/index.js";
+import { NotFoundError, BadRequestError } from "../errors/index.js";
 
 
 export type ReferenceInput = Omit<Prisma.referenceCreateInput, "id">;

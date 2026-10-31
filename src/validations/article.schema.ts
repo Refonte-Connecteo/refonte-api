@@ -3,7 +3,7 @@ import { storedUrlSchema } from "./storedUrl.schema.js";
 
 export const articleCreateSchema = z.object({
   title: z.string().min(1, "Titre requis").max(255),
-  description: z.string().max(5000).optional(),
+  description: z.string().max(5000).optional().nullable(),
   type: z.string().max(50).optional(),
   cover_url: storedUrlSchema.optional().nullable(),
   file_url: storedUrlSchema.optional().nullable(),
