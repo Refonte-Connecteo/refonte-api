@@ -100,6 +100,8 @@ jobs:
               meta = r.get("extra", {}).get("metadata", {})
               print(f"  - [{r.get('check_id')}] {r.get('path')}:{r.get('start', {}).get('line')}"
                     f" — {meta.get('cwe', '')}")
+              # Annotation GitHub : visible sans ouvrir le journal complet.
+              print(f"::error file={r.get('path')},line={r.get('start', {}).get('line')}::{r.get('check_id')}")
           sys.exit(1 if blocking else 0)
           PY
 
@@ -285,24 +287,26 @@ jobs:
         id: zap-scan
         continue-on-error: true
         run: |
-          chmod 777 "$PWD" "$REPORTS_DIR" # écriture par l'utilisateur du conteneur ZAP
+          chmod 777 "$REPORTS_DIR" # écriture par l'utilisateur du conteneur ZAP
+          cp .zap/rules.conf "$REPORTS_DIR/rules.conf"
           # NB : -t n'est PAS dans COMMON_ARGS car sa valeur diffère selon la
           # branche (URL cible pour baseline, fichier de spec pour api-scan).
-          COMMON_ARGS="-r $REPORTS_DIR/zap-dast-report.html \
-                       -J $REPORTS_DIR/zap-dast-report.json \
+          COMMON_ARGS="-r zap-dast-report.html \
+                       -J zap-dast-report.json \
                        -T 20 -I"
 
           if [ -f docs/openapi.yaml ] || [ -f openapi.yaml ]; then
             SPEC=$(ls docs/openapi.yaml openapi.yaml 2>/dev/null | head -n1)
             echo "::notice::Spec OpenAPI détectée ($SPEC) — scan API ACTIF."
-            docker run --rm --network host -v "$PWD":/zap/wrk/:rw \
-              ghcr.io/zaproxy/zaproxy:stable \
-              zap-api-scan.py -t "/zap/wrk/$SPEC" -c .zap/rules.conf $COMMON_ARGS
+            cp "$SPEC" "$REPORTS_DIR/openapi.yaml"
+            docker run --rm --network host -v "$PWD/$REPORTS_DIR:/zap/wrk:rw" \
+              zaproxy/zap-stable:latest \
+              zap-api-scan.py -t "/zap/wrk/openapi.yaml" -f openapi -c rules.conf $COMMON_ARGS
           else
             echo "::notice::Aucune spec OpenAPI — scan baseline (passif)."
-            docker run --rm --network host -v "$PWD":/zap/wrk/:rw \
-              ghcr.io/zaproxy/zaproxy:stable \
-              zap-baseline.py -t "http://127.0.0.1:${PORT}" -c .zap/rules.conf $COMMON_ARGS
+            docker run --rm --network host -v "$PWD/$REPORTS_DIR:/zap/wrk:rw" \
+              zaproxy/zap-stable:latest \
+              zap-baseline.py -t "http://127.0.0.1:${PORT}" -c rules.conf $COMMON_ARGS
           fi
 
       - name: Verrou DAST — échec si règle FAIL ou alerte HIGH/CRITICAL

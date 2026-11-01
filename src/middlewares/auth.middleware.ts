@@ -26,7 +26,7 @@ export function authenticate(req: Request, _res: Response, next: NextFunction): 
 
   if (!header || !header.startsWith("Bearer ")) {
     logger.warn({ ip: req.ip }, "Tentative d'accès sans token");
-    void logAuditEvent({
+    const auditDone = logAuditEvent({
       eventType: AuditEventType.AUTH_FAILED,
       action: "Accès sans token",
       success: false,
@@ -36,7 +36,7 @@ export function authenticate(req: Request, _res: Response, next: NextFunction): 
     });
     const err = new UnauthorizedError("Token manquant ou invalide");
     (err as UnauthorizedError & { auditLogged?: boolean }).auditLogged = true;
-    next(err);
+    void auditDone.finally(() => next(err));
     return;
   }
 
@@ -49,7 +49,7 @@ export function authenticate(req: Request, _res: Response, next: NextFunction): 
     }) as unknown as JwtPayload & { isMfaPending?: boolean };
   } catch {
     logger.warn({ ip: req.ip }, "Tentative d'accès avec token invalide");
-    void logAuditEvent({
+    const auditDone = logAuditEvent({
       eventType: AuditEventType.AUTH_FAILED,
       action: "Accès avec token invalide",
       success: false,
@@ -59,7 +59,7 @@ export function authenticate(req: Request, _res: Response, next: NextFunction): 
     });
     const err = new UnauthorizedError("Token invalide ou expiré");
     (err as UnauthorizedError & { auditLogged?: boolean }).auditLogged = true;
-    next(err);
+    void auditDone.finally(() => next(err));
     return;
   }
 
@@ -158,9 +158,7 @@ export function requireSuperAdmin(req: Request, _res: Response, next: NextFuncti
     actorUserId: req.user.userId,
     actorEmail: req.user.email,
     meta: buildAuditMeta(req),
-  });
-
-  next();
+  }).finally(() => next());
 }
 
 export function requireAdmin(req: Request, _res: Response, next: NextFunction): void {
@@ -179,9 +177,7 @@ export function requireAdmin(req: Request, _res: Response, next: NextFunction): 
     actorUserId: req.user.userId,
     actorEmail: req.user.email,
     meta: buildAuditMeta(req),
-  });
-
-  next();
+  }).finally(() => next());
 }
 
 export function forcePasswordChange(req: Request, _res: Response, next: NextFunction): void {

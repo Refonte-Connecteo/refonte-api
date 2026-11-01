@@ -116,7 +116,7 @@ export function validateRequest(validations: ValidationChain[]) {
     const errors = validationResult(req);
 
     if (!errors.isEmpty()) {
-      void logAuditEvent({
+      await logAuditEvent({
         eventType: AuditEventType.VALIDATION_REJECTED,
         action: "Validation de requête rejetée",
         success: false,
