@@ -231,7 +231,7 @@ jobs:
       # Configuration minimale requise par src/config/env.config.ts.
       # NODE_ENV != production => pas d'exigence TLS sur la connexion Postgres locale.
       DATABASE_URL: postgresql://zap:dast_password@localhost:5432/connecteo_dast
-      JWT_SECRET: ci-dast-only-secret-key-0123456789abcdef0123456789abcdef
+      JWT_SECRET: ci-dast-only-throwaway-value-0123456789abcdef0123456789abcdef
       ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
       NODE_ENV: test
       HOST: 127.0.0.1

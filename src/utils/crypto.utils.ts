@@ -21,7 +21,9 @@ export function getEncryptionKey(): Buffer {
 
 export function encrypt(text: string): string {
   const iv = randomBytes(IV_LENGTH);
-  const cipher = createCipheriv(ALGORITHM, getEncryptionKey(), iv);
+  const cipher = createCipheriv(ALGORITHM, getEncryptionKey(), iv, {
+    authTagLength: AUTH_TAG_LENGTH,
+  });
   const encrypted = Buffer.concat([cipher.update(text, "utf8"), cipher.final()]);
   const authTag = cipher.getAuthTag();
   return Buffer.concat([iv, authTag, encrypted]).toString("base64");
@@ -37,7 +39,9 @@ export function decrypt(payload: string): string {
   const authTag = raw.subarray(IV_LENGTH, IV_LENGTH + AUTH_TAG_LENGTH);
   const data = raw.subarray(IV_LENGTH + AUTH_TAG_LENGTH);
 
-  const decipher = createDecipheriv(ALGORITHM, getEncryptionKey(), iv);
+  const decipher = createDecipheriv(ALGORITHM, getEncryptionKey(), iv, {
+    authTagLength: AUTH_TAG_LENGTH,
+  });
   decipher.setAuthTag(authTag);
   return Buffer.concat([decipher.update(data), decipher.final()]).toString("utf8");
 }
