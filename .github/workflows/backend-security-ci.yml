@@ -11,7 +11,7 @@
 #   endpoint de santé /health et fichiers statiques /uploads.
 #
 # SAST (statique)  :
-#   - Semgrep        : p/security-audit, p/owasp-top-10, p/nodejs, p/secrets
+#   - Semgrep        : p/security-audit, p/owasp-top-ten, p/nodejs, p/secrets
 #                      → verrou sur les findings de sévérité ERROR (≈ HIGH/CRITICAL)
 #   - Gitleaks       : détection de secrets/clés hardcodés (code + historique git)
 #                      → verrou sur toute fuite détectée
@@ -58,7 +58,7 @@ jobs:
   # 1. SAST — Analyse statique du code Node.js/TypeScript (Semgrep)
   # ===========================================================================
   sast-semgrep:
-    name: SAST — Semgrep (security-audit, owasp-top-10, nodejs, secrets)
+    name: SAST — Semgrep (security-audit, owasp-top-ten, nodejs, secrets)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     container:
@@ -72,12 +72,12 @@ jobs:
           mkdir -p "$REPORTS_DIR"
           semgrep scan \
             --config=p/security-audit \
-            --config=p/owasp-top-10 \
+            --config=p/owasp-top-ten \
             --config=p/nodejs \
             --config=p/secrets \
             --metrics=off \
-            --json --output="$REPORTS_DIR/semgrep-report.json" \
-            --sarif --output="$REPORTS_DIR/semgrep-report.sarif" \
+            --json-output="$REPORTS_DIR/semgrep-report.json" \
+            --sarif-output="$REPORTS_DIR/semgrep-report.sarif" \
             --quiet || true
         # Le scan ne bloque pas ici : le verrou sévérité-based est appliqué
         # à l'étape suivante afin de toujours produire le rapport complet.
@@ -127,7 +127,7 @@ jobs:
       - name: Scan Gitleaks (bloque dès qu'un secret est détecté)
         run: |
           mkdir -p "$REPORTS_DIR"
-          docker run --rm -v "$PWD":/repo --workdir /repo \
+          docker run --rm --user "$(id -u):$(id -g)" -v "$PWD":/repo --workdir /repo \
             zricethezav/gitleaks:v8.21.2 detect \
               --source=/repo \
               --no-banner \
@@ -167,11 +167,12 @@ jobs:
 
       - name: npm audit — verrou sur HIGH et CRITICAL
         run: |
+          mkdir -p "$REPORTS_DIR"
           set -o pipefail
           npm audit --audit-level=high --json | tee "$REPORTS_DIR/npm-audit.json"
 
       - name: Trivy FS — verrou sur CRITICAL/HIGH (rapport lisible)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: fs
           scan-ref: .
@@ -184,7 +185,7 @@ jobs:
 
       - name: Trivy FS — rapport SARIF (traçabilité / outillage externe)
         continue-on-error: true
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: fs
           scan-ref: .
@@ -276,7 +277,7 @@ jobs:
           exit 1
 
       # --network host : le conteneur ZAP joint l'API via 127.0.0.1 du runner.
-      # Le workspace est monté sur /zap/werk : .zap/rules.conf y est lu et les
+      # Le workspace est monté sur /zap/wrk : .zap/rules.conf y est lu et les
       # rapports HTML/JSON y sont écrits.
       # -I : seules les règles FAIL de .zap/rules.conf font échouer le script ;
       #      le verrou final est appliqué par l'étape suivante.
@@ -284,6 +285,7 @@ jobs:
         id: zap-scan
         continue-on-error: true
         run: |
+          chmod 777 "$PWD" "$REPORTS_DIR" # écriture par l'utilisateur du conteneur ZAP
           # NB : -t n'est PAS dans COMMON_ARGS car sa valeur diffère selon la
           # branche (URL cible pour baseline, fichier de spec pour api-scan).
           COMMON_ARGS="-r $REPORTS_DIR/zap-dast-report.html \
@@ -293,12 +295,12 @@ jobs:
           if [ -f docs/openapi.yaml ] || [ -f openapi.yaml ]; then
             SPEC=$(ls docs/openapi.yaml openapi.yaml 2>/dev/null | head -n1)
             echo "::notice::Spec OpenAPI détectée ($SPEC) — scan API ACTIF."
-            docker run --rm --network host -v "$PWD":/zap/werk/:rw \
+            docker run --rm --network host -v "$PWD":/zap/wrk/:rw \
               ghcr.io/zaproxy/zaproxy:stable \
-              zap-api-scan.py -t "/zap/werk/$SPEC" -c .zap/rules.conf $COMMON_ARGS
+              zap-api-scan.py -t "/zap/wrk/$SPEC" -c .zap/rules.conf $COMMON_ARGS
           else
             echo "::notice::Aucune spec OpenAPI — scan baseline (passif)."
-            docker run --rm --network host -v "$PWD":/zap/werk/:rw \
+            docker run --rm --network host -v "$PWD":/zap/wrk/:rw \
               ghcr.io/zaproxy/zaproxy:stable \
               zap-baseline.py -t "http://127.0.0.1:${PORT}" -c .zap/rules.conf $COMMON_ARGS
           fi

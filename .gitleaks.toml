@@ -1,0 +1,11 @@
+# Valeurs factices documentées : exemples d'environnement et secrets jetables
+# des bases de test CI. Aucune ne correspond à un secret réel.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Exemples et secrets de test CI"
+paths = [
+  '''(^|/)\.env\.example$''',
+  '''^\.github/workflows/.*\.yml$''',
+]
