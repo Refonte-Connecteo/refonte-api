@@ -142,11 +142,6 @@ export async function logAuditEvent(input: AuditEventInput): Promise<void> {
   }
 }
 
-/** Version fire-and-forget : n'attend pas la fin de l'écriture. */
-export function emitAuditEvent(input: AuditEventInput): void {
-  void logAuditEvent(input);
-}
-
 export interface AuditLogQuery {
   page?: number;
   pageSize?: number;

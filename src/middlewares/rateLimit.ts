@@ -43,8 +43,8 @@ export function createUploadCvLimiter(options?: {
     standardHeaders: true,
     legacyHeaders: false,
     message: uploadLimitMessage,
-    handler: (req, res) => {
-      void logAuditEvent({
+    handler: async (req, res) => {
+      await logAuditEvent({
         eventType: AuditEventType.RATE_LIMITED,
         action: "Limite d'upload de CV dépassée",
         success: false,
@@ -79,8 +79,8 @@ export function createPageViewLimiter(options?: {
     standardHeaders: true,
     legacyHeaders: false,
     message: pageViewLimitMessage,
-    handler: (req, res) => {
-      void logAuditEvent({
+    handler: async (req, res) => {
+      await logAuditEvent({
         eventType: AuditEventType.RATE_LIMITED,
         action: "Limite de tracking d'analytics dǸpassǸe",
         success: false,
@@ -103,8 +103,8 @@ export const globalLimiter: RequestHandler = IS_TEST
       standardHeaders: true,
       legacyHeaders: false,
       message: RATE_LIMIT_MESSAGE,
-      handler: (req, res) => {
-        void logAuditEvent({
+      handler: async (req, res) => {
+        await logAuditEvent({
           eventType: AuditEventType.RATE_LIMITED,
           action: "Limite globale de requêtes dépassée",
           success: false,
@@ -124,8 +124,8 @@ export const authLimiter: RequestHandler = IS_TEST
       standardHeaders: true,
       legacyHeaders: false,
       message: authLimitMessage,
-      handler: (req, res) => {
-        void logAuditEvent({
+      handler: async (req, res) => {
+        await logAuditEvent({
           eventType: AuditEventType.RATE_LIMITED,
           action: "Trop de tentatives d'authentification",
           success: false,

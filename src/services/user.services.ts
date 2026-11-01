@@ -62,10 +62,10 @@ async function withAudit<T>(
 ): Promise<T> {
   try {
     const result = await fn();
-    void logAuditEvent({ ...buildEvent(true), meta: ctx?.meta, actorUserId: ctx?.actorUserId, actorEmail: ctx?.actorEmail });
+    await logAuditEvent({ ...buildEvent(true), meta: ctx?.meta, actorUserId: ctx?.actorUserId, actorEmail: ctx?.actorEmail });
     return result;
   } catch (error) {
-    void logAuditEvent({ ...buildEvent(false, error), meta: ctx?.meta, actorUserId: ctx?.actorUserId, actorEmail: ctx?.actorEmail });
+    await logAuditEvent({ ...buildEvent(false, error), meta: ctx?.meta, actorUserId: ctx?.actorUserId, actorEmail: ctx?.actorEmail });
     throw error;
   }
 }
@@ -358,7 +358,7 @@ export async function login(email: string, password: string, ctx?: AuditContext)
   }
 
   if (user.mfa_enabled) {
-    void logAuditEvent({
+    await logAuditEvent({
       eventType: AuditEventType.LOGIN_SUCCESS,
       action: "Connexion réussie",
       success: true,
@@ -379,7 +379,7 @@ export async function login(email: string, password: string, ctx?: AuditContext)
 
   const { otpauthUrl, qrCodeDataUrl } = await ensureMfaSecret(user);
 
-  void logAuditEvent({
+  await logAuditEvent({
     eventType: AuditEventType.LOGIN_SUCCESS,
     action: "Connexion réussie",
     success: true,
@@ -676,7 +676,7 @@ export async function disableMfa(userId: number, ctx?: AuditContext): Promise<Sa
 
 export async function logout(userId: number, token: string, ctx?: AuditContext): Promise<void> {
   await revokeToken(token, userId);
-  void logAuditEvent({
+  await logAuditEvent({
     eventType: AuditEventType.LOGOUT,
     action: "Déconnexion",
     success: true,

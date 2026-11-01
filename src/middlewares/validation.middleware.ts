@@ -173,13 +173,14 @@ export function rejectUnknownBodyFields(
       errorCode: "UNKNOWN_FIELDS",
       details: { fields: unknownFields },
       meta: buildAuditMeta(req),
-    });
-    res.status(400).json({
-      error: "Champs non autorisés détectés",
-      details: unknownFields.map((field) => ({
-        field,
-        message: `Champ non prévu : ${field}`,
-      })),
+    }).finally(() => {
+      res.status(400).json({
+        error: "Champs non autorisés détectés",
+        details: unknownFields.map((field) => ({
+          field,
+          message: `Champ non prévu : ${field}`,
+        })),
+      });
     });
   };
 }

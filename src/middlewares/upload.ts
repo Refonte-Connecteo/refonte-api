@@ -55,11 +55,12 @@ function createUploadMiddleware(options: UploadOptions) {
           errorCode: "UNSUPPORTED_EXTENSION",
           details: { filename: file.originalname, extension: ext },
           meta: buildAuditMeta(req),
-        });
-        cb(
-          new AppError(
-            `Format de fichier non supporté (${ext || "aucune extension"}). Formats acceptés : ${allowedExtensions.join(", ")}`,
-            400,
+        }).finally(() =>
+          cb(
+            new AppError(
+              `Format de fichier non supporté (${ext || "aucune extension"}). Formats acceptés : ${allowedExtensions.join(", ")}`,
+              400,
+            ),
           ),
         );
         return;

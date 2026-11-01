@@ -70,7 +70,7 @@ router.post(
     try {
       const actor = req.user;
       const { url, filename } = await persistUploadedFile(req.file, "uploads");
-      void logAuditEvent({
+      await logAuditEvent({
         eventType: AuditEventType.FILE_UPLOADED,
         action: "Upload de fichier",
         success: true,
@@ -102,7 +102,7 @@ router.post(
 
     try {
       const { url, filename } = await persistUploadedFile(req.file, "cvs");
-      void logAuditEvent({
+      await logAuditEvent({
         eventType: AuditEventType.FILE_UPLOADED,
         action: "Upload de CV",
         success: true,
