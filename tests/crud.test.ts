@@ -73,8 +73,8 @@ const RESOURCES: Resource[] = [
   },
   {
     path: "/api/hero-slide", item: "slide", list: "slides",
-    create: { image_url: "/images/h.png", title: "H", description: "D" },
-    update: { title: "H2" }, clearable: { description: null },
+    create: { image_url: "/images/h.png", title: "H", description: "D", page: "impact" },
+    update: { title: "H2", page: "home" }, clearable: { description: null, mobile_image_url: null },
   },
   {
     path: "/api/ceomessage", item: "data", list: "messages",
@@ -223,6 +223,23 @@ describe("Données personnelles", () => {
     expect(read.body.contactMessage.is_read).toBe(true);
     expect((await api.delete(`/api/contact-message/${id}`).set(auth())).status).toBe(200);
   });
+
+  it("message de contact : pièce jointe facultative, lien dangereux refusé", async () => {
+    const base = { first_name: "A", last_name: "B", email: "a@b.test", message: "Collaboration" };
+    const withFile = await api.post("/api/contact-message").send({ ...base, attachment_url: "/uploads/brief.pdf" });
+    expect(withFile.status).toBe(201);
+    const id = withFile.body.contactMessage.id as number;
+    const read = await api.get(`/api/contact-message/${id}`).set(auth());
+    expect(read.body.contactMessage.attachment_url).toBe("/uploads/brief.pdf");
+
+    const without = await api.post("/api/contact-message").send(base);
+    expect(without.status).toBe(201);
+    expect(without.body.contactMessage.attachment_url).toBeNull();
+
+    for (const attachment_url of ["javascript:alert(1)", "//evil.test/x.pdf", "../../etc/passwd"]) {
+      expect((await api.post("/api/contact-message").send({ ...base, attachment_url })).status).toBe(400);
+    }
+  });
 });
 
 describe("Brouillons et contenus inactifs", () => {
@@ -316,5 +333,43 @@ describe("Statistiques du tableau de bord", () => {
     const stored = await prisma.page_view.findFirst();
     expect(stored?.visitor_id).toBe("humain");
     expect(stored?.referrer).toBeNull();
+  });
+});
+
+describe("Slides hero par page", () => {
+  it("filtre par page, garde l'accueil par défaut et refuse une page inconnue", async () => {
+    const home = await api.post("/api/hero-slide").set(auth())
+      .send({ image_url: "/images/h1.png", mobile_image_url: "/images/h1-mobile.png", cta_label: "Visiter", cta_url: "/contact" });
+    const impact = await api.post("/api/hero-slide").set(auth()).send({ image_url: "/images/h2.png", page: "impact" });
+    const hidden = await api.post("/api/hero-slide").set(auth()).send({ image_url: "/images/h3.png", page: "impact", is_active: false });
+    expect(home.status).toBe(201);
+    expect(home.body.slide.page).toBe("home");
+    expect(home.body.slide.mobile_image_url).toBe("/images/h1-mobile.png");
+
+    const pub = await api.get("/api/hero-slide?onlyActive=true&page=impact");
+    expect(pub.status).toBe(200);
+    const ids = (pub.body.slides as { id: number }[]).map((s) => s.id);
+    expect(ids).toContain(impact.body.slide.id);
+    expect(ids).not.toContain(home.body.slide.id);
+    expect(ids).not.toContain(hidden.body.slide.id);
+
+    const admin = await api.get("/api/hero-slide?page=impact").set(auth());
+    expect((admin.body.slides as { id: number }[]).map((s) => s.id)).toContain(hidden.body.slide.id);
+
+    expect((await api.get("/api/hero-slide?onlyActive=true&page=autre")).status).toBe(400);
+    expect((await api.post("/api/hero-slide").set(auth()).send({ image_url: "/images/h.png", page: "autre" })).status).toBe(400);
+  });
+
+  it("refuse un lien de bouton ou une image mobile dangereux", async () => {
+    for (const cta_url of ["javascript:alert(1)", "//evil.test", "data:text/html,x", "/a b"]) {
+      const res = await api.post("/api/hero-slide").set(auth()).send({ image_url: "/images/h.png", cta_url });
+      expect(res.status, cta_url).toBe(400);
+    }
+    for (const cta_url of ["/impact", "#rapport", "https://my.matterport.com/show/?m=42v2xCu5D9F"]) {
+      const res = await api.post("/api/hero-slide").set(auth()).send({ image_url: "/images/h.png", cta_url });
+      expect(res.status, cta_url).toBe(201);
+    }
+    const res = await api.post("/api/hero-slide").set(auth()).send({ image_url: "/images/h.png", mobile_image_url: "javascript:alert(1)" });
+    expect(res.status).toBe(400);
   });
 });

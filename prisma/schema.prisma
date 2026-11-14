@@ -78,14 +78,21 @@ model audit_log {
 
 /// S1 — Hero carousel
 model hero_slide {
-  id          Int      @id @default(autoincrement())
-  image_url   String
-  title       String?
-  description String?
-  cta_label   String?
-  cta_url     String?
-  position    Int      @default(0)
-  is_active   Boolean  @default(true)
+  id               Int      @id @default(autoincrement())
+  /// Page qui affiche le slide : "home" (accueil) ou "impact" (Impact & Sustainability).
+  page             String   @default("home") @db.VarChar(20)
+  image_url        String
+  /// Version portrait facultative, affichée sur mobile.
+  mobile_image_url String?
+  /// Texte alternatif de l'image (le texte visible est intégré à l'image).
+  title            String?
+  description      String?
+  cta_label        String?
+  cta_url          String?
+  position         Int      @default(0)
+  is_active        Boolean  @default(true)
+
+  @@index([page, position])
 }
 
 /// S2 — Animated KPIs
@@ -215,6 +222,8 @@ model contact_message {
   company     String?
   country     String?
   message     String
+  /// Pièce jointe facultative (demande de collaboration : cahier des charges, présentation…)
+  attachment_url String?
   is_read     Boolean  @default(false)
   submitted_at DateTime @default(now()) 
 }

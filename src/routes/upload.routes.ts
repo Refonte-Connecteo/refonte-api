@@ -88,35 +88,45 @@ router.post(
   },
 );
 
-// Upload de CV public (5 Mo, pdf/doc/docx) pour le formulaire carriere.
-router.post(
-  "/cv",
-  uploadCvLimiter,
-  uploadCv.single("file"),
-  processUploadedFile(CV_FILE_KINDS),
-  async (req: Request, res: Response, next: NextFunction) => {
-    if (!req.file) {
-      res.status(400).json({ error: "Aucun fichier fourni" });
-      return;
-    }
+/**
+ * Upload public d'un document (5 Mo, pdf/doc/docx), sans authentification :
+ * limité par IP, type vérifié sur le contenu réel du fichier, nom généré côté serveur.
+ */
+function publicDocumentUpload(prefix: string, action: string) {
+  return [
+    uploadCvLimiter,
+    uploadCv.single("file"),
+    processUploadedFile(CV_FILE_KINDS),
+    async (req: Request, res: Response, next: NextFunction) => {
+      if (!req.file) {
+        res.status(400).json({ error: "Aucun fichier fourni" });
+        return;
+      }
 
-    try {
-      const { url, filename } = await persistUploadedFile(req.file, "cvs");
-      await logAuditEvent({
-        eventType: AuditEventType.FILE_UPLOADED,
-        action: "Upload de CV",
-        success: true,
-        resourceType: "file",
-        resourceId: filename,
-        details: { size: req.file.size, url },
-        meta: buildAuditMeta(req),
-      });
-      res.status(201).json({ url, filename });
-    } catch (err) {
-      next(err);
-    }
-  },
-);
+      try {
+        const { url, filename } = await persistUploadedFile(req.file, prefix);
+        await logAuditEvent({
+          eventType: AuditEventType.FILE_UPLOADED,
+          action,
+          success: true,
+          resourceType: "file",
+          resourceId: filename,
+          details: { size: req.file.size, url },
+          meta: buildAuditMeta(req),
+        });
+        res.status(201).json({ url, filename });
+      } catch (err) {
+        next(err);
+      }
+    },
+  ];
+}
+
+// CV du formulaire carrière.
+router.post("/cv", ...publicDocumentUpload("cvs", "Upload de CV"));
+
+// Pièce jointe facultative du formulaire de contact (demande de collaboration).
+router.post("/contact", ...publicDocumentUpload("contact", "Upload de pièce jointe de contact"));
 
 // Téléchargement sécurisé : bloque toute tentative de path traversal (403),
 // force le téléchargement pour les documents (pdf/doc/docx) afin de limiter

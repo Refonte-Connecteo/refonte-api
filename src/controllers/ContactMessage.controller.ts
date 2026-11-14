@@ -22,7 +22,7 @@ export const handleGetContactMessage = asyncHandler(async (req: Request, res: Re
 });
 
 export const handleCreateContactMessage = asyncHandler(async (req: Request, res: Response) => {
-  const { first_name, last_name, email, phone, company, country, message } = req.body;
+  const { first_name, last_name, email, phone, company, country, message, attachment_url } = req.body;
  
   const contactMessage = await createContactMessage({
     first_name,
@@ -32,6 +32,7 @@ export const handleCreateContactMessage = asyncHandler(async (req: Request, res:
     company,
     country,
     message,
+    attachment_url: attachment_url || null,
   });
  
   res.status(201).json({ message: "Message envoyé avec succès", contactMessage });

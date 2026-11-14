@@ -3,15 +3,19 @@ import prisma from "../lib/prisma.js";
 
 import type { Prisma, hero_slide } from "../generated/prisma/client.js";
 import { NotFoundError, BadRequestError } from "../errors/index.js";
+import type { HeroPage } from "../validations/heroslide.schema.js";
 
 
 export type HeroSlideInput = Omit<Prisma.hero_slideCreateInput, "id">;
 
-export async function getAllHeroSlides(onlyActive = false): Promise<hero_slide[]> 
+export async function getAllHeroSlides(onlyActive = false, page?: HeroPage): Promise<hero_slide[]>
 {
     return prisma.hero_slide.findMany({
-        where: onlyActive ? { is_active: true } : undefined,
-        orderBy: { position: "asc"},
+        where: {
+            ...(onlyActive ? { is_active: true } : {}),
+            ...(page ? { page } : {}),
+        },
+        orderBy: [{ position: "asc" }, { id: "asc" }],
     });
 }
 

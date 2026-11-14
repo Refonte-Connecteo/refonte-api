@@ -3,6 +3,8 @@ import prisma from "../lib/prisma.js";
 
 import type { Prisma, contact_message } from "../generated/prisma/client.js";
 import { NotFoundError, BadRequestError } from "../errors/index.js";
+import { logger } from "../lib/logger.js";
+import { deleteStoredFile } from "./purge.service.js";
 
 
 export type ContactMessageInput = Omit<Prisma.contact_messageCreateInput, "id">;
@@ -47,7 +49,14 @@ export async function markAsRead(id: number): Promise<contact_message> {
 }
 
 export async function deleteContactMessage(id: number): Promise<void> {
-    await getContactMessageById(id);
+    const { attachment_url } = await getContactMessageById(id);
 
     await prisma.contact_message.delete({ where: { id } });
+
+    // Donnée personnelle : la pièce jointe disparaît avec le message (best-effort).
+    if (attachment_url) {
+        await deleteStoredFile(attachment_url).catch((err) =>
+            logger.warn({ err, contactMessageId: id }, "Échec de suppression de la pièce jointe"),
+        );
+    }
 } 

@@ -9,13 +9,14 @@ const MIN_AGE_MS = 24 * 60 * 60 * 1000;
 
 async function collectReferencedLocalFiles(): Promise<Set<string>> {
   const rows = await Promise.all([
-    prisma.hero_slide.findMany({ select: { image_url: true } }),
+    prisma.hero_slide.findMany({ select: { image_url: true, mobile_image_url: true } }),
     prisma.ceo_message.findMany({ select: { image_url: true } }),
     prisma.reference.findMany({ select: { image_url: true } }),
     prisma.catalogue.findMany({ select: { file_url: true } }),
     prisma.job_posting.findMany({ select: { fiche_url: true } }),
     prisma.application.findMany({ select: { cv_url: true } }),
     prisma.spontaneous_application.findMany({ select: { cv_url: true } }),
+    prisma.contact_message.findMany({ select: { attachment_url: true } }),
     prisma.article.findMany({ select: { cover_url: true, file_url: true } }),
     prisma.event_image.findMany({ select: { image_url: true } }),
   ]);

@@ -41,12 +41,12 @@ function extractStorageKey(fileUrl: string): string | null {
 }
 
 /**
- * Supprime physiquement un fichier CV référencé par son URL :
+ * Supprime physiquement un fichier déposé (CV, pièce jointe) référencé par son URL :
  * - chemin local `/uploads/<fichier>` → fichier disque (résolution sécurisée) ;
  * - URL http(s) S3/R2 → objet distant (no-op si le stockage n'est pas configuré).
  * Lève une exception en cas d'échec : l'appelant journalise et continue.
  */
-async function deleteCvFile(cvUrl: string): Promise<boolean> {
+export async function deleteStoredFile(cvUrl: string): Promise<boolean> {
   if (typeof cvUrl !== "string" || cvUrl.trim() === "") {
     return false;
   }
@@ -111,7 +111,7 @@ export async function purgeExpiredApplications(
   let cvFilesDeleted = 0;
   for (const row of [...applications, ...spontaneous]) {
     try {
-      if (await deleteCvFile(row.cv_url)) {
+      if (await deleteStoredFile(row.cv_url)) {
         cvFilesDeleted += 1;
       }
     } catch (err) {
@@ -145,7 +145,7 @@ export async function purgeExpiredApplications(
 
 /**
  * Purge les messages de contact soumis depuis plus de `retentionMonths` mois
- * (défaut : CONTACT_MESSAGE_RETENTION_MONTHS, 12 mois).
+ * (défaut : CONTACT_MESSAGE_RETENTION_MONTHS, 12 mois), pièces jointes comprises.
  */
 export async function purgeExpiredContactMessages(
   retentionMonths?: number,
@@ -155,8 +155,25 @@ export async function purgeExpiredContactMessages(
     return { deleted: 0 };
   }
 
+  const cutoff = retentionCutoffMonths(months);
+  const withAttachment = await prisma.contact_message.findMany({
+    where: { submitted_at: { lt: cutoff }, attachment_url: { not: null } },
+    select: { id: true, attachment_url: true },
+  });
+  for (const row of withAttachment) {
+    try {
+      await deleteStoredFile(row.attachment_url ?? "");
+    } catch (err) {
+      // Best-effort : un échec de fichier ne bloque pas la purge en base.
+      logger.warn(
+        { err, contactMessageId: row.id },
+        "Échec de suppression de la pièce jointe pendant la purge",
+      );
+    }
+  }
+
   const result = await prisma.contact_message.deleteMany({
-    where: { submitted_at: { lt: retentionCutoffMonths(months) } },
+    where: { submitted_at: { lt: cutoff } },
   });
   return { deleted: result.count };
 }

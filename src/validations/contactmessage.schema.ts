@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { storedUrlSchema } from "./storedUrl.schema.js";
 
 // Mode strict : tout champ non prévu est rejeté (minimisation RGPD).
 export const contactMessageCreateSchema = z
@@ -10,5 +11,6 @@ export const contactMessageCreateSchema = z
     company: z.string().max(200).optional().nullable(),
     country: z.string().max(100).optional().nullable(),
     message: z.string().min(1, "Message requis").max(5000),
+    attachment_url: storedUrlSchema.optional().nullable(),
   })
   .strict();

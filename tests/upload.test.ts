@@ -109,6 +109,34 @@ describe("Uploads — CV public (sans authentification)", () => {
   });
 });
 
+describe("Uploads — pièce jointe du formulaire de contact", () => {
+  beforeEach(async () => {
+    await resetDatabase();
+  });
+
+  it("accepte un PDF sans authentification", async () => {
+    const res = await api
+      .post("/api/upload/contact")
+      .attach("file", tinyPdf(), { filename: "brief.pdf", contentType: "application/pdf" });
+
+    expect(res.status).toBe(201);
+    expect(res.body.url).toMatch(/^\/uploads\/[\w.-]+\.pdf$/);
+    createdFiles.push(storedPathFromUrl(res.body.url as string));
+  });
+
+  it("refuse une image ou un faux PDF", async () => {
+    const png = await api
+      .post("/api/upload/contact")
+      .attach("file", await tinyPng(), { filename: "brief.png", contentType: "image/png" });
+    const fake = await api
+      .post("/api/upload/contact")
+      .attach("file", Buffer.from("<script>alert(1)</script>"), { filename: "brief.pdf", contentType: "application/pdf" });
+
+    expect(png.status).toBe(400);
+    expect(fake.status).toBe(400);
+  });
+});
+
 describe("Uploads — rate-limit dédié aux CV", () => {
   it("bloque au-delà de la limite (429)", async () => {
     const rateApp = express();

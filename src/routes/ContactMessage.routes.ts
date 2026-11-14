@@ -2,6 +2,7 @@ import { Router } from "express";
 import { body } from "express-validator";
 import { authenticate, requireAdmin } from "../middlewares/auth.middleware.js";
 import { validateRequest, stringSchema, rejectUnknownBodyFields } from "../middlewares/validation.middleware.js";
+import { isValidStoredUrl } from "../validations/storedUrl.schema.js";
 import {
   handleGetAllContactMessages,
   handleGetContactMessage,
@@ -20,6 +21,9 @@ const createContactMessageValidation = validateRequest([
   stringSchema("company", { optional: true, max: 200 }),
   stringSchema("country", { optional: true, max: 100 }),
   stringSchema("message", { max: 5000 }),
+  stringSchema("attachment_url", { optional: true, max: 500 })
+    .custom(isValidStoredUrl)
+    .withMessage("attachment_url invalide (chemin /uploads ou URL http(s))"),
 ]);
 
 // Minimisation RGPD : seuls les champs strictement nécessaires sont acceptés.
@@ -31,6 +35,7 @@ const CONTACT_MESSAGE_ALLOWED_FIELDS = [
   "company",
   "country",
   "message",
+  "attachment_url",
 ] as const;
 
 // Public route - contact form submission
