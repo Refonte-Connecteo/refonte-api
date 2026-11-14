@@ -9,3 +9,6 @@ tests
 uploads
 explication.txt
 *.txt
+docker-compose.yml
+Makefile
+docker.env

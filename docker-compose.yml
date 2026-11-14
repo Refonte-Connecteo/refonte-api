@@ -1,0 +1,122 @@
+# =============================================================================
+# Connecteo en local avec Docker : base PostgreSQL, API et site.
+# Utilisation : depuis back/, passer par le Makefile (make up, make logs, make down…).
+# front/ doit se trouver à côté de back/ (même dossier parent).
+#
+#   site  -> http://localhost:3001
+#   API   -> http://localhost:3000 (santé : /health)
+#   base  -> uniquement sur le réseau interne (make psql pour s'y connecter)
+#
+# Variables : docker.env (copie de docker.env.example, créée par « make init »)
+# et .env pour les secrets de l'API (JWT, chiffrement…).
+# =============================================================================
+
+name: connecteo
+
+x-hardening: &hardening
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-connecteo}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD manquant dans docker.env (lancer make init)}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    <<: *hardening
+    # L'entrypoint de postgres change le propriétaire des fichiers puis abandonne root.
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
+    deploy:
+      resources:
+        limits: { memory: 256m, cpus: "0.5" }
+    networks: [internal]
+
+  # Applique les migrations Prisma, puis s'arrête. L'API attend qu'il ait réussi.
+  migrate:
+    build:
+      context: .
+      target: migrate
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-connecteo}
+    depends_on:
+      db: { condition: service_healthy }
+    <<: *hardening
+    networks: [internal]
+    restart: "no"
+
+  api:
+    build:
+      context: .
+      target: runtime
+    restart: unless-stopped
+    env_file: [./.env]
+    environment:
+      # Remplace les valeurs de .env qui visent la machine hôte.
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-connecteo}
+      NODE_ENV: production
+      PORT: "3000"
+      FRONTEND_URL: http://localhost:${FRONT_PORT:-3001}
+    ports:
+      - "127.0.0.1:${API_PORT:-3000}:3000"
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    <<: *hardening
+    read_only: true
+    tmpfs:
+      - /tmp:size=50m,noexec,nosuid
+    volumes:
+      - uploads_data:/app/uploads
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits: { memory: 512m, cpus: "1.0" }
+    # « internal » pour joindre la base, « public » pour publier le port 3000.
+    networks: [internal, public]
+
+  front:
+    build:
+      context: ../front
+      args:
+        # Adresse de l'API vue par le navigateur (figée au build).
+        NEXT_PUBLIC_API_URL: http://localhost:${API_PORT:-3000}/api
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${FRONT_PORT:-3001}:3001"
+    depends_on:
+      api: { condition: service_healthy }
+    <<: *hardening
+    read_only: true
+    tmpfs:
+      - /tmp:size=50m,noexec,nosuid
+      - /app/.next/cache:size=100m,uid=1000,gid=1000
+    deploy:
+      resources:
+        limits: { memory: 512m, cpus: "1.0" }
+    networks: [public]
+
+volumes:
+  db_data:
+  uploads_data:
+
+networks:
+  # Sans accès à l'extérieur : seule l'API et les migrations voient la base.
+  internal:
+    internal: true
+  public:
