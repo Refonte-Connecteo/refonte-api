@@ -41,7 +41,7 @@ export const handleInviteAdmin = asyncHandler(async (req: Request, res: Response
     actorEmail: req.user?.email,
   }, userTypeId);
   res.status(201).json({
-    message: "Admin invit├® avec succ├¿s",
+    message: "Admin invité avec succès",
     user: user.user,
     invitation_token: user.invitation_token,
     invitation_token_expires: user.invitation_token_expires,
@@ -57,7 +57,7 @@ export const handleCheckPending = asyncHandler(async (req: Request, res: Respons
   }
 
   const user = await checkPendingAdmin(email);
-  res.json({ message: "Compte en attente trouv├®", user });
+  res.json({ message: "Compte en attente trouvé", user });
 });
 
 export const handleSetPassword = asyncHandler(async (req: Request, res: Response) => {
@@ -99,7 +99,7 @@ export const handleLogin = asyncHandler(async (req: Request, res: Response) => {
   }
 
   setRefreshTokenCookie(res, result.refreshToken);
-  res.json({ message: "Connexion r├®ussie", user: result.user, token: result.token, refreshToken: result.refreshToken, forcePasswordChange: result.forcePasswordChange });
+  res.json({ message: "Connexion réussie", user: result.user, token: result.token, refreshToken: result.refreshToken, forcePasswordChange: result.forcePasswordChange });
 });
 
 export const handleConfirmMfaSetup = asyncHandler(async (req: Request, res: Response) => {
@@ -113,7 +113,7 @@ export const handleConfirmMfaSetup = asyncHandler(async (req: Request, res: Resp
   const result = await confirmMfaSetup(mfaToken, code, { meta: buildAuditMeta(req) });
   setRefreshTokenCookie(res, result.refreshToken);
   res.json({
-    message: "MFA activ├® avec succ├¿s",
+    message: "MFA activé avec succès",
     user: result.user,
     token: result.token,
     refreshToken: result.refreshToken,
@@ -132,7 +132,7 @@ export const handleVerifyMfa = asyncHandler(async (req: Request, res: Response) 
   const result = await verifyMfa(mfaToken, code, { meta: buildAuditMeta(req) });
   setRefreshTokenCookie(res, result.refreshToken);
   res.json({
-    message: "Connexion r├®ussie",
+    message: "Connexion réussie",
     user: result.user,
     token: result.token,
     refreshToken: result.refreshToken,
@@ -161,7 +161,7 @@ export const handleLogout = asyncHandler(async (req: Request, res: Response) => 
   const header = req.headers.authorization;
 
   if (!req.user) {
-    res.status(401).json({ error: "Non authentifi├®" });
+    res.status(401).json({ error: "Non authentifié" });
     return;
   }
 
@@ -188,7 +188,7 @@ export const handleLogout = asyncHandler(async (req: Request, res: Response) => 
   }
 
   clearRefreshTokenCookie(res);
-  res.json({ message: "D├®connexion r├®ussie" });
+  res.json({ message: "Déconnexion réussie" });
 });
 
 /** Coupe toutes les sessions du compte, sur tous les appareils (jetons d'accès et de renouvellement). */
@@ -210,7 +210,7 @@ export const handleLogoutAll = asyncHandler(async (req: Request, res: Response) 
 
 export const handleChangePassword = asyncHandler(async (req: Request, res: Response) => {
   if (!req.user) {
-    res.status(401).json({ error: "Non authentifi├®" });
+    res.status(401).json({ error: "Non authentifié" });
     return;
   }
 
@@ -226,12 +226,12 @@ export const handleChangePassword = asyncHandler(async (req: Request, res: Respo
     actorUserId: req.user.userId,
     actorEmail: req.user.email,
   });
-  res.json({ message: "Mot de passe modifi├® avec succ├¿s. Vous devez vous reconnecter." });
+  res.json({ message: "Mot de passe modifié avec succès. Vous devez vous reconnecter." });
 });
 
 export const handleDisableMfa = asyncHandler(async (req: Request, res: Response) => {
   if (!req.user) {
-    res.status(401).json({ error: "Non authentifi├®" });
+    res.status(401).json({ error: "Non authentifié" });
     return;
   }
 
@@ -240,7 +240,7 @@ export const handleDisableMfa = asyncHandler(async (req: Request, res: Response)
     actorUserId: req.user.userId,
     actorEmail: req.user.email,
   });
-  res.json({ message: "MFA d├®sactiv├® avec succ├¿s", user });
+  res.json({ message: "MFA désactivé avec succès", user });
 });
 
 export const handleGetAllAdmins = asyncHandler(async (_req: Request, res: Response) => {
@@ -261,7 +261,7 @@ export const handleDeactivateAdmin = asyncHandler(async (req: Request, res: Resp
     actorUserId: req.user?.userId,
     actorEmail: req.user?.email,
   });
-  res.json({ message: "Admin d├®sactiv├® avec succ├¿s", user });
+  res.json({ message: "Admin désactivé avec succès", user });
 });
 
 export const handleDeleteAdmin = asyncHandler(async (req: Request, res: Response) => {
@@ -277,12 +277,12 @@ export const handleDeleteAdmin = asyncHandler(async (req: Request, res: Response
     actorUserId: req.user?.userId,
     actorEmail: req.user?.email,
   });
-  res.json({ message: "Admin supprim├® d├®finitivement" });
+  res.json({ message: "Admin supprimé définitivement" });
 });
 
 export const handleGetProfile = asyncHandler(async (req: Request, res: Response) => {
   if (!req.user) {
-    res.status(401).json({ error: "Non authentifi├®" });
+    res.status(401).json({ error: "Non authentifié" });
     return;
   }
 

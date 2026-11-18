@@ -163,11 +163,11 @@ function extractMfaPendingUserId(token: string): number {
       algorithms: [env.JWT_ALGORITHM],
     }) as unknown as Partial<MfaTokenPayload>;
   } catch {
-    throw new UnauthorizedError("Token MFA invalide ou expir├®");
+    throw new UnauthorizedError("Token MFA invalide ou expiré");
   }
 
   if (!decoded.isMfaPending || typeof decoded.userId !== "number") {
-    throw new UnauthorizedError("Token MFA invalide ou expir├®");
+    throw new UnauthorizedError("Token MFA invalide ou expiré");
   }
 
   return decoded.userId;
@@ -199,12 +199,12 @@ export async function inviteAdmin(email: string, username: string, ctx?: AuditCo
   }), async () => {
     const existingEmail = await prisma.user.findUnique({ where: { email } });
     if (existingEmail) {
-      throw new ConflictError("Un utilisateur avec cet email existe d├®j├á");
+      throw new ConflictError("Un utilisateur avec cet email existe déjà");
     }
 
     const existingUsername = await prisma.user.findUnique({ where: { username } });
     if (existingUsername) {
-      throw new ConflictError("Ce nom d'utilisateur est d├®j├á pris");
+      throw new ConflictError("Ce nom d'utilisateur est déjà pris");
     }
 
     const invitation_token = randomBytes(32).toString("hex");
@@ -232,27 +232,27 @@ export async function checkPendingAdmin(email: string): Promise<SafeUser> {
   }) as unknown as UserResult | null;
 
   if (!user) {
-    throw new NotFoundError("Aucun compte trouv├® avec cet email");
+    throw new NotFoundError("Aucun compte trouvé avec cet email");
   }
 
   if (user.user_type_id !== 2) {
-    throw new BadRequestError("Cet email ne correspond pas ├á un administrateur");
+    throw new BadRequestError("Cet email ne correspond pas à un administrateur");
   }
 
   if (user.is_active) {
-    throw new BadRequestError("Ce compte est d├®j├á actif. Veuillez vous connecter.");
+    throw new BadRequestError("Ce compte est déjà actif. Veuillez vous connecter.");
   }
 
   if (user.password_hash) {
-    throw new BadRequestError("Ce compte a d├®j├á un mot de passe. Veuillez vous connecter.");
+    throw new BadRequestError("Ce compte a déjà un mot de passe. Veuillez vous connecter.");
   }
 
   if (!user.invitation_token || !user.invitation_token_expires) {
-    throw new BadRequestError("Aucun lien d'activation n'a ├®t├® ├®mis pour ce compte.");
+    throw new BadRequestError("Aucun lien d'activation n'a été émis pour ce compte.");
   }
 
   if (user.invitation_token_expires < new Date()) {
-    throw new BadRequestError("Le lien d'invitation a expir├®. Contactez un super administrateur.");
+    throw new BadRequestError("Le lien d'invitation a expiré. Contactez un super administrateur.");
   }
 
   return toSafeUser(user);
@@ -268,7 +268,7 @@ export async function setPassword(email: string, password: string, invitationTok
     details: { email },
   }), async () => {
     if (password.length < 8) {
-      throw new BadRequestError("Le mot de passe doit contenir au moins 8 caract├¿res");
+      throw new BadRequestError("Le mot de passe doit contenir au moins 8 caractères");
     }
 
     const user = await prisma.user.findUnique({
@@ -276,19 +276,19 @@ export async function setPassword(email: string, password: string, invitationTok
     }) as unknown as UserResult | null;
 
     if (!user) {
-      throw new NotFoundError("Aucun compte trouv├® avec cet email");
+      throw new NotFoundError("Aucun compte trouvé avec cet email");
     }
 
     if (user.password_hash) {
-      throw new BadRequestError("Ce compte a d├®j├á un mot de passe");
+      throw new BadRequestError("Ce compte a déjà un mot de passe");
     }
 
     if (!user.invitation_token || !invitationToken || !secureTokenEqual(invitationToken, user.invitation_token)) {
-      throw new UnauthorizedError("Le lien d'activation est invalide ou a d├®j├á ├®t├® utilis├®");
+      throw new UnauthorizedError("Le lien d'activation est invalide ou a déjà été utilisé");
     }
 
     if (!user.invitation_token_expires || user.invitation_token_expires < new Date()) {
-      throw new UnauthorizedError("Le lien d'activation a expir├®");
+      throw new UnauthorizedError("Le lien d'activation a expiré");
     }
 
     const hashedPassword = await bcrypt.hash(password, BCRYPT_ROUNDS);
@@ -306,7 +306,7 @@ export async function setPassword(email: string, password: string, invitationTok
     const { otpauthUrl, qrCodeDataUrl } = await ensureMfaSecret(updated);
 
     return {
-      message: "Compte cr├®├®. L'activation du MFA est obligatoire : scannez le QR Code puis validez-le.",
+      message: "Compte créé. L'activation du MFA est obligatoire : scannez le QR Code puis validez-le.",
       requireMfaSetup: true,
       mfaToken: signMfaToken(updated.id),
       userId: updated.id,
@@ -347,8 +347,8 @@ export async function login(email: string, password: string, ctx?: AuditContext)
   }
 
   if (!user.password_hash) {
-    await logFailedLogin(new UnauthorizedError("Vous devez d'abord d├®finir votre mot de passe via le lien d'invitation"));
-    throw new UnauthorizedError("Vous devez d'abord d├®finir votre mot de passe via le lien d'invitation");
+    await logFailedLogin(new UnauthorizedError("Vous devez d'abord définir votre mot de passe via le lien d'invitation"));
+    throw new UnauthorizedError("Vous devez d'abord définir votre mot de passe via le lien d'invitation");
   }
 
   const isValid = await bcrypt.compare(password, user.password_hash);
@@ -425,11 +425,11 @@ export async function confirmMfaSetup(mfaToken: string, code: string, ctx?: Audi
     }
 
     if (user.mfa_enabled) {
-      throw new BadRequestError("Le MFA est d├®j├á activ├® sur ce compte");
+      throw new BadRequestError("Le MFA est déjà activé sur ce compte");
     }
 
     if (!isValidTotpCode(code, user.mfa_secret)) {
-      throw new UnauthorizedError("Code de v├®rification invalide");
+      throw new UnauthorizedError("Code de vérification invalide");
     }
 
     const updated = await prisma.user.update({
@@ -464,11 +464,11 @@ export async function verifyMfa(mfaToken: string, code: string, ctx?: AuditConte
     }
 
     if (!user.mfa_secret || !user.mfa_enabled) {
-      throw new BadRequestError("Le MFA n'est pas activ├® sur ce compte");
+      throw new BadRequestError("Le MFA n'est pas activé sur ce compte");
     }
 
     if (!isValidTotpCode(code, user.mfa_secret)) {
-      throw new UnauthorizedError("Code de v├®rification invalide");
+      throw new UnauthorizedError("Code de vérification invalide");
     }
 
     await prisma.user.update({
@@ -505,11 +505,11 @@ export async function deactivateAdmin(adminId: number, ctx?: AuditContext): Prom
     }
 
     if (ctx?.actorUserId === adminId) {
-      throw new ForbiddenError("Vous ne pouvez pas d├®sactiver votre propre compte");
+      throw new ForbiddenError("Vous ne pouvez pas désactiver votre propre compte");
     }
 
     if (user.user_type_id !== 2) {
-      throw new BadRequestError("Seuls les administrateurs peuvent ├¬tre d├®sactiv├®s");
+      throw new BadRequestError("Seuls les administrateurs peuvent être désactivés");
     }
 
     const updated = await prisma.user.update({
@@ -541,7 +541,7 @@ export async function deleteAdmin(adminId: number, ctx?: AuditContext): Promise<
     }
 
     if (user.user_type_id !== 2) {
-      throw new BadRequestError("Seuls les administrateurs peuvent ├¬tre supprim├®s");
+      throw new BadRequestError("Seuls les administrateurs peuvent être supprimés");
     }
 
     await prisma.user.delete({ where: { id: adminId } });
@@ -571,7 +571,7 @@ export async function changePassword(userId: number, newPassword: string, ctx?: 
     resourceId: String(userId),
   }), async () => {
     if (newPassword.length < 8) {
-      throw new BadRequestError("Le mot de passe doit contenir au moins 8 caract├¿res");
+      throw new BadRequestError("Le mot de passe doit contenir au moins 8 caractères");
     }
 
     const user = await prisma.user.findUnique({ where: { id: userId } }) as unknown as UserResult | null;
@@ -656,7 +656,7 @@ export async function disableMfa(userId: number, ctx?: AuditContext): Promise<Sa
     }
 
     if (!user.mfa_enabled) {
-      throw new BadRequestError("Le MFA n'est pas activ├® sur ce compte");
+      throw new BadRequestError("Le MFA n'est pas activé sur ce compte");
     }
 
     const updated = await prisma.user.update({
@@ -717,7 +717,7 @@ export async function refreshAccessToken(refreshToken: string, ctx?: AuditContex
     }
 
     if (user.token_version !== decoded.tokenVersion) {
-      throw new UnauthorizedError("Token de rafra├«chissement r├®voqu├®");
+      throw new UnauthorizedError("Token de rafraîchissement révoqué");
     }
 
     await revokeToken(refreshToken, user.id);
