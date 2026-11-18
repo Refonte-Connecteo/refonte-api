@@ -14,6 +14,8 @@ import {
   createMfaSecret,
   createOtpAuthUri,
   createQrCodeDataUri,
+  generateRecoveryCodes,
+  hashRecoveryCode,
   isValidTotpCode,
   MFA_TOKEN_TTL,
 } from "./mfa.service.js";
@@ -37,6 +39,8 @@ const BCRYPT_ROUNDS = 12;
 
 /** Durée de validité du lien d'invitation (72 h). */
 const INVITATION_TTL_MS = 72 * 60 * 60 * 1000;
+/** Lien de réinitialisation d'accès émis par un super administrateur : court, car il ouvre un compte existant. */
+const ACCESS_RESET_TTL_MS = 60 * 60 * 1000;
 
 /** Comparaison à temps constant pour les jetons d'invitation. */
 function secureTokenEqual(a: string, b: string): boolean {
@@ -135,6 +139,8 @@ export type AuthResult = {
   token: string;
   refreshToken: string;
   forcePasswordChange: boolean;
+  /** Codes de secours en clair : renvoyés une seule fois, à l'activation du MFA. */
+  recoveryCodes?: string[];
 };
 
 export type MfaTokenPayload = {
@@ -306,7 +312,7 @@ export async function setPassword(email: string, password: string, invitationTok
     const { otpauthUrl, qrCodeDataUrl } = await ensureMfaSecret(updated);
 
     return {
-      message: "Compte créé. L'activation du MFA est obligatoire : scannez le QR Code puis validez-le.",
+      message: "Mot de passe enregistré. L'activation du MFA est obligatoire : scannez le QR Code puis validez-le.",
       requireMfaSetup: true,
       mfaToken: signMfaToken(updated.id),
       userId: updated.id,
@@ -432,9 +438,14 @@ export async function confirmMfaSetup(mfaToken: string, code: string, ctx?: Audi
       throw new UnauthorizedError("Code de vérification invalide");
     }
 
+    const recoveryCodes = generateRecoveryCodes();
     const updated = await prisma.user.update({
       where: { id: user.id },
-      data: { mfa_enabled: true, last_login_at: new Date() },
+      data: {
+        mfa_enabled: true,
+        last_login_at: new Date(),
+        mfa_recovery_codes: recoveryCodes.map(hashRecoveryCode),
+      },
     }) as unknown as UserResult;
 
     return {
@@ -442,6 +453,7 @@ export async function confirmMfaSetup(mfaToken: string, code: string, ctx?: Audi
       token: signAccessToken(updated),
       refreshToken: signRefreshToken(updated),
       forcePasswordChange: updated.force_password_change,
+      recoveryCodes,
     };
   });
 }
@@ -477,6 +489,137 @@ export async function verifyMfa(mfaToken: string, code: string, ctx?: AuditConte
     });
 
     return { user: toSafeUser(user), token: signAccessToken(user), refreshToken: signRefreshToken(user), forcePasswordChange: user.force_password_change };
+  });
+}
+
+/**
+ * Connexion avec un code de secours à la place du code TOTP. Chaque code ne sert qu'une fois :
+ * la mise à jour conditionnelle (le code doit encore être présent) empêche deux usages simultanés.
+ */
+export async function verifyMfaRecoveryCode(mfaToken: string, recoveryCode: string, ctx?: AuditContext): Promise<AuthResult & { remainingRecoveryCodes: number }> {
+  let remaining = 0;
+  return withAudit(ctx, (success, error) => ({
+    eventType: success ? AuditEventType.MFA_VERIFY_SUCCESS : AuditEventType.MFA_VERIFY_FAILED,
+    action: "Vérification MFA par code de secours",
+    success,
+    errorCode: success ? undefined : errorCodeFrom(error),
+    details: { method: "recovery_code", ...(success ? { remaining } : {}) },
+  }), async () => {
+    const userId = extractMfaPendingUserId(mfaToken);
+    const user = await prisma.user.findUnique({ where: { id: userId } }) as unknown as UserResult | null;
+
+    if (!user) {
+      throw new NotFoundError("Utilisateur");
+    }
+    if (!user.mfa_secret || !user.mfa_enabled) {
+      throw new BadRequestError("Le MFA n'est pas activé sur ce compte");
+    }
+
+    const hash = hashRecoveryCode(recoveryCode);
+    const left = user.mfa_recovery_codes.filter((h) => h !== hash);
+    const consumed = left.length < user.mfa_recovery_codes.length
+      ? await prisma.user.updateMany({
+          where: { id: user.id, mfa_recovery_codes: { has: hash } },
+          data: { mfa_recovery_codes: left, last_login_at: new Date() },
+        })
+      : { count: 0 };
+
+    if (consumed.count !== 1) {
+      throw new UnauthorizedError("Code de secours invalide ou déjà utilisé");
+    }
+
+    remaining = left.length;
+    return {
+      user: toSafeUser(user),
+      token: signAccessToken(user),
+      refreshToken: signRefreshToken(user),
+      forcePasswordChange: user.force_password_change,
+      remainingRecoveryCodes: remaining,
+    };
+  });
+}
+
+/** Nouveaux codes de secours (les anciens deviennent inutilisables). Mot de passe vérifié par la route. */
+export async function regenerateRecoveryCodes(userId: number, ctx?: AuditContext): Promise<string[]> {
+  return withAudit(ctx, (success, error) => ({
+    eventType: AuditEventType.MFA_RECOVERY_CODES_GENERATED,
+    action: "Génération de nouveaux codes de secours",
+    success,
+    errorCode: success ? undefined : errorCodeFrom(error),
+    resourceType: "user",
+    resourceId: String(userId),
+  }), async () => {
+    const user = await prisma.user.findUnique({ where: { id: userId } }) as unknown as UserResult | null;
+    if (!user) {
+      throw new NotFoundError("Utilisateur");
+    }
+    if (!user.mfa_enabled) {
+      throw new BadRequestError("Activez d'abord la double authentification");
+    }
+
+    const codes = generateRecoveryCodes();
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { mfa_recovery_codes: codes.map(hashRecoveryCode) },
+    });
+    return codes;
+  });
+}
+
+export type AccessResetResult = {
+  user: SafeUser;
+  reset_token: string;
+  reset_token_expires: Date;
+};
+
+/**
+ * Mot de passe oublié ou téléphone perdu : un super administrateur réinitialise l'accès d'un admin.
+ * Le mot de passe et le MFA sont effacés, toutes les sessions coupées, et un lien à usage unique
+ * valable 1 h est émis : l'admin choisit un nouveau mot de passe puis réenregistre son application.
+ * Le lien réutilise le parcours d'activation (/admin/set-password), déjà protégé et testé.
+ */
+export async function resetAdminAccess(targetId: number, ctx?: AuditContext): Promise<AccessResetResult> {
+  return withAudit(ctx, (success, error) => ({
+    eventType: AuditEventType.ADMIN_ACCESS_RESET,
+    action: "Réinitialisation de l'accès d'un administrateur",
+    success,
+    errorCode: success ? undefined : errorCodeFrom(error),
+    resourceType: "user",
+    resourceId: String(targetId),
+  }), async () => {
+    const target = await prisma.user.findUnique({ where: { id: targetId } }) as unknown as UserResult | null;
+
+    if (!target) {
+      throw new NotFoundError("Administrateur");
+    }
+    if (ctx?.actorUserId === target.id) {
+      throw new ForbiddenError("Pour votre propre compte, utilisez la page Sécurité & profil");
+    }
+    if (target.user_type_id !== 2) {
+      throw new BadRequestError("Seul l'accès d'un administrateur peut être réinitialisé ici");
+    }
+    if (!target.is_active && target.password_hash) {
+      throw new BadRequestError("Ce compte est désactivé");
+    }
+
+    const reset_token = randomBytes(32).toString("hex");
+    const reset_token_expires = new Date(Date.now() + ACCESS_RESET_TTL_MS);
+
+    const updated = await prisma.user.update({
+      where: { id: target.id },
+      data: {
+        password_hash: null,
+        mfa_secret: null,
+        mfa_enabled: false,
+        mfa_recovery_codes: [],
+        force_password_change: false,
+        invitation_token: reset_token,
+        invitation_token_expires: reset_token_expires,
+      },
+    }) as unknown as UserResult;
+    await revokeAllTokensForUser(target.id);
+
+    return { user: toSafeUser(updated), reset_token, reset_token_expires };
   });
 }
 

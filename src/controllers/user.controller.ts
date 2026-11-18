@@ -16,8 +16,11 @@ import {
   logout,
   logoutAllSessions,
   refreshAccessToken,
+  verifyMfaRecoveryCode,
+  regenerateRecoveryCodes,
+  resetAdminAccess,
 } from "../services/user.services.js";
-import { isSixDigitCode } from "../services/mfa.service.js";
+import { isRecoveryCodeFormat, isSixDigitCode } from "../services/mfa.service.js";
 import { asyncHandler } from "../middlewares/auth.middleware.js";
 import { revokeRefreshTokenIfOwned } from "../services/token.service.js";
 import { buildAuditMeta, getAuditLogs } from "../services/audit.service.js";
@@ -118,13 +121,39 @@ export const handleConfirmMfaSetup = asyncHandler(async (req: Request, res: Resp
     token: result.token,
     refreshToken: result.refreshToken,
     forcePasswordChange: result.forcePasswordChange,
+    // Affichés une seule fois : ils ne sont plus récupérables ensuite (seule leur empreinte est gardée).
+    recoveryCodes: result.recoveryCodes,
   });
 });
 
 export const handleVerifyMfa = asyncHandler(async (req: Request, res: Response) => {
-  const { mfaToken, code } = req.body ?? {};
+  const { mfaToken, code, recoveryCode } = req.body ?? {};
 
-  if (typeof mfaToken !== "string" || !mfaToken || !isSixDigitCode(code)) {
+  if (typeof mfaToken !== "string" || !mfaToken) {
+    res.status(400).json({ error: "mfaToken requis" });
+    return;
+  }
+
+  // Code de secours (téléphone indisponible) à la place du code de l'application.
+  if (recoveryCode !== undefined) {
+    if (!isRecoveryCodeFormat(recoveryCode)) {
+      res.status(400).json({ error: "Code de secours invalide (format XXXX-XXXX)" });
+      return;
+    }
+    const result = await verifyMfaRecoveryCode(mfaToken, recoveryCode, { meta: buildAuditMeta(req) });
+    setRefreshTokenCookie(res, result.refreshToken);
+    res.json({
+      message: "Connexion réussie",
+      user: result.user,
+      token: result.token,
+      refreshToken: result.refreshToken,
+      forcePasswordChange: result.forcePasswordChange,
+      remainingRecoveryCodes: result.remainingRecoveryCodes,
+    });
+    return;
+  }
+
+  if (!isSixDigitCode(code)) {
     res.status(400).json({ error: "mfaToken et code (6 chiffres) sont requis" });
     return;
   }
@@ -138,6 +167,21 @@ export const handleVerifyMfa = asyncHandler(async (req: Request, res: Response) 
     refreshToken: result.refreshToken,
     forcePasswordChange: result.forcePasswordChange,
   });
+});
+
+/** Nouveaux codes de secours pour le compte connecté (mot de passe vérifié par requireReauthentication). */
+export const handleRegenerateRecoveryCodes = asyncHandler(async (req: Request, res: Response) => {
+  if (!req.user) {
+    res.status(401).json({ error: "Non authentifié" });
+    return;
+  }
+
+  const recoveryCodes = await regenerateRecoveryCodes(req.user.userId, {
+    meta: buildAuditMeta(req),
+    actorUserId: req.user.userId,
+    actorEmail: req.user.email,
+  });
+  res.json({ message: "Nouveaux codes de secours générés", recoveryCodes });
 });
 
 export const handleRefresh = asyncHandler(async (req: Request, res: Response) => {
@@ -262,6 +306,23 @@ export const handleDeactivateAdmin = asyncHandler(async (req: Request, res: Resp
     actorEmail: req.user?.email,
   });
   res.json({ message: "Admin désactivé avec succès", user });
+});
+
+/** Super administrateur : lien à usage unique (1 h) pour qu'un admin redéfinisse son mot de passe et son MFA. */
+export const handleResetAdminAccess = asyncHandler(async (req: Request, res: Response) => {
+  const id = parseInt(req.params.id as string, 10);
+
+  if (isNaN(id)) {
+    res.status(400).json({ error: "ID invalide" });
+    return;
+  }
+
+  const result = await resetAdminAccess(id, {
+    meta: buildAuditMeta(req),
+    actorUserId: req.user?.userId,
+    actorEmail: req.user?.email,
+  });
+  res.json({ message: "Accès réinitialisé", ...result });
 });
 
 export const handleDeleteAdmin = asyncHandler(async (req: Request, res: Response) => {

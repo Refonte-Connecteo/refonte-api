@@ -22,6 +22,8 @@ import {
   handleRefresh,
   handleLogout,
   handleLogoutAll,
+  handleRegenerateRecoveryCodes,
+  handleResetAdminAccess,
   handleChangePassword,
   handleDisableMfa,
   handleGetAuditLogs,
@@ -71,6 +73,21 @@ const mfaValidation = validateRequest([
     .withMessage("Code MFA invalide (6 chiffres requis)"),
 ]);
 
+/** Vérification à la connexion : code de l'application (6 chiffres) OU code de secours. */
+const mfaVerifyValidation = validateRequest([
+  body("mfaToken").isString().notEmpty().withMessage("mfaToken requis"),
+  body("code")
+    .if(body("recoveryCode").not().exists())
+    .isString()
+    .matches(/^\d{6}$/)
+    .withMessage("Code MFA invalide (6 chiffres requis)"),
+  body("recoveryCode")
+    .optional()
+    .isString()
+    .isLength({ min: 8, max: 20 })
+    .withMessage("Code de secours invalide"),
+]);
+
 const refreshValidation = validateRequest([
   body("refreshToken")
     .optional()
@@ -87,12 +104,12 @@ router.post("/admin/check-pending", authLimiter, checkPendingValidation, handleC
 // Auth routes (MFA onboarding + verification)
 router.post("/auth/login", authLimiter, loginValidation, handleLogin);
 router.post("/auth/mfa/confirm-setup", authLimiter, mfaValidation, handleConfirmMfaSetup);
-router.post("/auth/mfa/verify", authLimiter, mfaValidation, handleVerifyMfa);
+router.post("/auth/mfa/verify", authLimiter, mfaVerifyValidation, handleVerifyMfa);
 router.post("/auth/refresh", authLimiter, refreshValidation, handleRefresh);
 
 // Admin aliases for the MFA endpoints
 router.post("/admin/mfa/confirm-setup", authLimiter, mfaValidation, handleConfirmMfaSetup);
-router.post("/admin/mfa/verify", authLimiter, mfaValidation, handleVerifyMfa);
+router.post("/admin/mfa/verify", authLimiter, mfaVerifyValidation, handleVerifyMfa);
 
 // Authenticated user routes
 router.get("/admin/me", authenticate, handleGetProfile);
@@ -103,6 +120,7 @@ router.post("/auth/logout-all", authenticate, handleLogoutAll);
 // Sensitive operations — require the current password even with a valid JWT
 router.post("/auth/change-password", authenticate, requireReauthentication, handleChangePassword);
 router.post("/auth/mfa/disable", authenticate, requireReauthentication, handleDisableMfa);
+router.post("/auth/mfa/recovery-codes", authLimiter, authenticate, requireReauthentication, handleRegenerateRecoveryCodes);
 
 // Force change password — accessible when force_password_change is active
 router.post("/auth/force-change-password", authenticate, handleForceChangePassword);
@@ -111,6 +129,7 @@ router.post("/auth/force-change-password", authenticate, handleForceChangePasswo
 router.post("/admin/invite", authenticate, requireSuperAdmin, forcePasswordChange, handleInviteAdmin);
 router.get("/admin", authenticate, requireSuperAdmin, forcePasswordChange, handleGetAllAdmins);
 router.delete("/admin/:id/deactivate", authenticate, requireSuperAdmin, forcePasswordChange, handleDeactivateAdmin);
+router.post("/admin/:id/reset-access", authenticate, requireSuperAdmin, forcePasswordChange, handleResetAdminAccess);
 router.delete("/admin/:id", authenticate, requireSuperAdmin, forcePasswordChange, handleDeleteAdmin);
 
 // Piste d'audit (consultation réservée superAdmin)
