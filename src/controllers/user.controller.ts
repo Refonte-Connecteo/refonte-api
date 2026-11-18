@@ -14,11 +14,12 @@ import {
   forceChangePassword,
   disableMfa,
   logout,
+  logoutAllSessions,
   refreshAccessToken,
 } from "../services/user.services.js";
 import { isSixDigitCode } from "../services/mfa.service.js";
 import { asyncHandler } from "../middlewares/auth.middleware.js";
-import { revokeToken } from "../services/token.service.js";
+import { revokeRefreshTokenIfOwned } from "../services/token.service.js";
 import { buildAuditMeta, getAuditLogs } from "../services/audit.service.js";
 import {
   REFRESH_TOKEN_COOKIE,
@@ -175,13 +176,36 @@ export const handleLogout = asyncHandler(async (req: Request, res: Response) => 
     actorEmail: req.user.email,
   });
 
-  const cookieToken = (req.cookies ?? {})[REFRESH_TOKEN_COOKIE] as string | undefined;
-  if (typeof cookieToken === "string" && cookieToken) {
-    await revokeToken(cookieToken, req.user.userId);
+  // Le refresh token peut venir du cookie et/ou du corps (le front le garde côté navigateur) :
+  // les deux sont révoqués, sinon la session resterait renouvelable après la déconnexion.
+  const cookieToken = (req.cookies ?? {})[REFRESH_TOKEN_COOKIE] as unknown;
+  const bodyToken = (req.body ?? {}).refreshToken as unknown;
+  const refreshTokens = new Set(
+    [cookieToken, bodyToken].filter((t): t is string => typeof t === "string" && t.trim() !== ""),
+  );
+  for (const refreshToken of refreshTokens) {
+    await revokeRefreshTokenIfOwned(refreshToken, req.user.userId);
   }
 
   clearRefreshTokenCookie(res);
   res.json({ message: "D├®connexion r├®ussie" });
+});
+
+/** Coupe toutes les sessions du compte, sur tous les appareils (jetons d'accès et de renouvellement). */
+export const handleLogoutAll = asyncHandler(async (req: Request, res: Response) => {
+  if (!req.user) {
+    res.status(401).json({ error: "Non authentifié" });
+    return;
+  }
+
+  await logoutAllSessions(req.user.userId, {
+    meta: buildAuditMeta(req),
+    actorUserId: req.user.userId,
+    actorEmail: req.user.email,
+  });
+
+  clearRefreshTokenCookie(res);
+  res.json({ message: "Toutes les sessions ont été fermées" });
 });
 
 export const handleChangePassword = asyncHandler(async (req: Request, res: Response) => {

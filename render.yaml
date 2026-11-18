@@ -21,6 +21,9 @@ services:
         type: raw_salt
       - key: FRONTEND_URL
         sync: false
+      # Render place un proxy devant l'API : sans cela, la limite de tentatives par IP ne marche pas.
+      - key: TRUST_PROXY
+        value: "1"
       - key: PORT
         value: 3000
 

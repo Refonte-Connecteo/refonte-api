@@ -1,8 +1,11 @@
 import type { Response } from "express";
+import { env } from "../config/env.config.js";
+import { durationToMs } from "../services/token.service.js";
 
 export const REFRESH_TOKEN_COOKIE = "refreshToken";
 
-const DEFAULT_REFRESH_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+/** Le cookie vit exactement aussi longtemps que le refresh token qu'il contient (7 jours par défaut). */
+const DEFAULT_REFRESH_TTL_MS = durationToMs(env.JWT_REFRESH_EXPIRES_IN);
 
 /**
  * Options strictes pour le cookie de refresh token :

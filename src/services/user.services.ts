@@ -686,6 +686,19 @@ export async function logout(userId: number, token: string, ctx?: AuditContext):
   });
 }
 
+/** Déconnexion de tous les appareils : tous les jetons émis jusqu'ici deviennent invalides. */
+export async function logoutAllSessions(userId: number, ctx?: AuditContext): Promise<void> {
+  await revokeAllTokensForUser(userId);
+  await logAuditEvent({
+    eventType: AuditEventType.LOGOUT,
+    action: "Déconnexion de toutes les sessions",
+    success: true,
+    actorUserId: userId,
+    actorEmail: ctx?.actorEmail,
+    meta: ctx?.meta,
+  });
+}
+
 export async function refreshAccessToken(refreshToken: string, ctx?: AuditContext): Promise<{ token: string; refreshToken: string }> {
   return withAudit(ctx, (success, error) => ({
     eventType: success ? AuditEventType.TOKEN_REFRESH : AuditEventType.TOKEN_REFRESH_FAILED,

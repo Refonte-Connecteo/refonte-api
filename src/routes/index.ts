@@ -21,6 +21,7 @@ import {
   handleCheckPending,
   handleRefresh,
   handleLogout,
+  handleLogoutAll,
   handleChangePassword,
   handleDisableMfa,
   handleGetAuditLogs,
@@ -97,6 +98,7 @@ router.post("/admin/mfa/verify", authLimiter, mfaValidation, handleVerifyMfa);
 router.get("/admin/me", authenticate, handleGetProfile);
 router.post("/admin/logout", authenticate, handleLogout);
 router.post("/auth/logout", authenticate, handleLogout);
+router.post("/auth/logout-all", authenticate, handleLogoutAll);
 
 // Sensitive operations — require the current password even with a valid JWT
 router.post("/auth/change-password", authenticate, requireReauthentication, handleChangePassword);

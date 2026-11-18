@@ -12,7 +12,7 @@ export type RefreshTokenPayload = JwtPayload & {
 
 const DEFAULT_REFRESH_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
-function durationToMs(duration: string): number {
+export function durationToMs(duration: string): number {
   const match = /^(\d+)([smhd])$/.exec(duration.trim());
   if (!match) {
     return DEFAULT_REFRESH_TTL_MS;
@@ -77,14 +77,36 @@ export async function isTokenRevoked(token: string): Promise<boolean> {
   return found !== null;
 }
 
+/**
+ * Ajoute un jeton à la liste noire. Idempotent : révoquer deux fois le même jeton
+ * (cookie + corps de la requête, double clic sur « Déconnexion »…) ne lève pas d'erreur.
+ */
 export async function revokeToken(token: string, userId: number | null): Promise<void> {
-  await prisma.revoked_token.create({
-    data: {
-      token_hash: tokenHash(token),
-      user_id: userId,
-      expires_at: new Date(Date.now() + durationToMs(env.JWT_REFRESH_EXPIRES_IN)),
-    },
+  await prisma.revoked_token.createMany({
+    data: [
+      {
+        token_hash: tokenHash(token),
+        user_id: userId,
+        expires_at: new Date(Date.now() + durationToMs(env.JWT_REFRESH_EXPIRES_IN)),
+      },
+    ],
+    skipDuplicates: true,
   });
+}
+
+/**
+ * Révoque un refresh token seulement s'il est valide et appartient à `userId`.
+ * Un jeton invalide, expiré, déjà révoqué ou appartenant à un autre compte est ignoré.
+ */
+export async function revokeRefreshTokenIfOwned(token: string, userId: number): Promise<boolean> {
+  try {
+    const decoded = await verifyRefreshToken(token);
+    if (decoded.userId !== userId) return false;
+    await revokeToken(token, userId);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export async function revokeAllTokensForUser(userId: number): Promise<void> {

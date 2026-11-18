@@ -21,6 +21,11 @@ const app = express();
 
 app.disable("x-powered-by");
 
+// IP réelle des visiteurs derrière un proxy (voir TRUST_PROXY) : indispensable à la limitation de débit.
+if (env.TRUST_PROXY > 0) {
+  app.set("trust proxy", env.TRUST_PROXY);
+}
+
 app.use((_req: Request, res: Response, next: NextFunction) => {
   res.removeHeader("Server");
   next();

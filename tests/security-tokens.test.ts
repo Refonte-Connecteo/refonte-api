@@ -3,7 +3,7 @@ import jwt from "jsonwebtoken";
 import prisma from "../src/lib/prisma.js";
 import { api, createUser, totpCodeFor, resetDatabase } from "./helpers/auth.js";
 import { createMfaSecret } from "../src/services/mfa.service.js";
-import { signRefreshToken, verifyRefreshToken } from "../src/services/token.service.js";
+import { durationToMs, signRefreshToken, verifyRefreshToken } from "../src/services/token.service.js";
 import { assertStrongJwtSecret, env } from "../src/config/env.config.js";
 import {
   REFRESH_TOKEN_COOKIE,
@@ -186,5 +186,84 @@ describe("Invalidation stricte des sessions (logout)", () => {
 
     const refreshRes = await api.post("/api/auth/refresh").set("Cookie", refreshCookieHeader(refreshToken));
     expect(refreshRes.status).toBe(401);
+  });
+});
+
+describe("Déconnexion : le refresh token gardé par le navigateur est aussi révoqué", () => {
+  beforeEach(async () => {
+    await resetDatabase();
+  });
+
+  it("révoque le refresh token envoyé dans le corps (stockage navigateur, sans cookie)", async () => {
+    const user = await createMfaUser();
+    const { token, refreshToken } = await loginViaApi(user.email, user.password);
+
+    const logoutRes = await api
+      .post("/api/auth/logout")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ refreshToken });
+    expect(logoutRes.status).toBe(200);
+
+    const refreshRes = await api.post("/api/auth/refresh").send({ refreshToken });
+    expect(refreshRes.status).toBe(401);
+  });
+
+  it("accepte le même jeton dans le cookie et le corps sans erreur (révocation idempotente)", async () => {
+    const user = await createMfaUser();
+    const { token, refreshToken } = await loginViaApi(user.email, user.password);
+
+    const logoutRes = await api
+      .post("/api/auth/logout")
+      .set("Authorization", `Bearer ${token}`)
+      .set("Cookie", refreshCookieHeader(refreshToken))
+      .send({ refreshToken });
+    expect(logoutRes.status).toBe(200);
+  });
+
+  it("ignore un refresh token appartenant à un autre compte", async () => {
+    const alice = await createMfaUser();
+    const bob = await createMfaUser();
+    const aliceSession = await loginViaApi(alice.email, alice.password);
+    const bobSession = await loginViaApi(bob.email, bob.password);
+
+    const logoutRes = await api
+      .post("/api/auth/logout")
+      .set("Authorization", `Bearer ${aliceSession.token}`)
+      .send({ refreshToken: bobSession.refreshToken });
+    expect(logoutRes.status).toBe(200);
+
+    const bobRefresh = await api.post("/api/auth/refresh").send({ refreshToken: bobSession.refreshToken });
+    expect(bobRefresh.status).toBe(200);
+  });
+});
+
+describe("Déconnexion de toutes les sessions (/auth/logout-all)", () => {
+  beforeEach(async () => {
+    await resetDatabase();
+  });
+
+  it("invalide les jetons de tous les appareils du compte", async () => {
+    const user = await createMfaUser();
+    const laptop = await loginViaApi(user.email, user.password);
+    const phone = await loginViaApi(user.email, user.password);
+
+    const res = await api.post("/api/auth/logout-all").set("Authorization", `Bearer ${laptop.token}`);
+    expect(res.status).toBe(200);
+
+    expect((await api.post("/api/auth/refresh").send({ refreshToken: laptop.refreshToken })).status).toBe(401);
+    expect((await api.post("/api/auth/refresh").send({ refreshToken: phone.refreshToken })).status).toBe(401);
+    expect((await api.get("/api/admin/me").set("Authorization", `Bearer ${phone.token}`)).status).toBe(401);
+  });
+
+  it("exige d'être connecté", async () => {
+    const res = await api.post("/api/auth/logout-all");
+    expect(res.status).toBe(401);
+  });
+});
+
+describe("Durée du cookie de refresh", () => {
+  it("correspond à la durée de vie du refresh token (plus 30 jours en dur)", () => {
+    expect(refreshCookieOptions().maxAge).toBe(durationToMs(env.JWT_REFRESH_EXPIRES_IN));
+    expect(durationToMs("7d")).toBe(7 * 24 * 60 * 60 * 1000);
   });
 });

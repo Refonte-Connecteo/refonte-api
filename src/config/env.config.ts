@@ -37,6 +37,13 @@ export const env = {
     10,
   ),
   PAGE_VIEW_RETENTION_DAYS: parseInt(process.env.PAGE_VIEW_RETENTION_DAYS || "395", 10),
+  /**
+   * Nombre de proxys de confiance devant l'API (Render, reverse proxy…). 0 = aucun (accès direct).
+   * Sans ce réglage derrière un proxy, toutes les requêtes semblent venir de la même IP et la
+   * limitation de débit par IP ne protège plus rien. Ne jamais le mettre sans proxy réel :
+   * un client pourrait alors usurper son IP via X-Forwarded-For.
+   */
+  TRUST_PROXY: Math.max(0, parseInt(process.env.TRUST_PROXY || "0", 10) || 0),
 };
 
 assertStrongJwtSecret(env.JWT_SECRET);
