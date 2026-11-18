@@ -1,0 +1,5 @@
+# Exceptions Trivy : mêmes avis et même justification que audit-allowlist.json (validées le 2026-11-18).
+# picomatch <= 4.0.7 (ReDoS) : aucune version corrigée, outil de test (vitest) uniquement, absent de la production.
+# À revoir au plus tard le 2027-01-31 : supprimer ces lignes dès qu'une version corrigée existe.
+CVE-2026-112366
+GHSA-fc5q-39xc-vjpf

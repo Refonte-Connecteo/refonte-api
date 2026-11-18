@@ -15,7 +15,8 @@
 #                      → verrou sur les findings de sévérité ERROR (≈ HIGH/CRITICAL)
 #   - Gitleaks       : détection de secrets/clés hardcodés (code + historique git)
 #                      → verrou sur toute fuite détectée
-#   - npm audit      : --audit-level=high → verrou sur HIGH/CRITICAL
+#   - npm audit      : verrou sur HIGH/CRITICAL (scripts/audit-gate.mjs : exceptions
+#                      justifiées et datées dans audit-allowlist.json, hors production)
 #   - Trivy (fs)     : vulnérabilités des paquets → verrou sur CRITICAL/HIGH
 #
 # DAST (dynamique) :
@@ -170,8 +171,8 @@ jobs:
       - name: npm audit — verrou sur HIGH et CRITICAL
         run: |
           mkdir -p "$REPORTS_DIR"
-          set -o pipefail
-          npm audit --audit-level=high --json | tee "$REPORTS_DIR/npm-audit.json"
+          npm audit --json > "$REPORTS_DIR/npm-audit.json" || true
+          node scripts/audit-gate.mjs
 
       - name: Trivy FS — verrou sur CRITICAL/HIGH (rapport lisible)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0

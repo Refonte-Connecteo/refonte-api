@@ -74,5 +74,7 @@ jobs:
           node-version: 22
           cache: npm
 
+      # Échec si HIGH ou CRITICAL, sauf exceptions justifiées et datées (audit-allowlist.json),
+      # jamais applicables aux dépendances de production.
       - name: Audit des dépendances — échec si HIGH ou CRITICAL
-        run: npm audit --audit-level=high
+        run: node scripts/audit-gate.mjs

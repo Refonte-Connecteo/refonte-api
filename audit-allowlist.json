@@ -1,0 +1,11 @@
+{
+  "advisories": [
+    {
+      "id": "GHSA-fc5q-39xc-vjpf",
+      "cve": "CVE-2026-112366",
+      "package": "picomatch",
+      "reason": "Aucune version corrigée (toutes <= 4.0.7). Utilisé seulement par vitest (outil de test), jamais en production ; ReDoS uniquement avec des motifs de recherche fournis par un attaquant.",
+      "reviewBy": "2027-01-31"
+    }
+  ]
+}
