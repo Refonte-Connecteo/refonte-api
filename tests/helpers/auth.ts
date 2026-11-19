@@ -62,8 +62,13 @@ export async function createUser(options: CreateUserOptions = {}): Promise<{
   return { id: created.id, email, username, password };
 }
 
+/**
+ * Code TOTP valide pour l'utilisateur. Les codes n'étant plus rejouables, et les tests se
+ * reconnectant souvent dans la même fenêtre de 30 s, le « dernier pas utilisé » est effacé avant.
+ * Le refus du rejeu est testé à part (tests/account-hardening.test.ts), sans cet utilitaire.
+ */
 export async function totpCodeFor(userId: number): Promise<string> {
-  const user = await prisma.user.findUnique({ where: { id: userId } });
+  const user = await prisma.user.update({ where: { id: userId }, data: { mfa_last_used_step: null } });
   if (!user?.mfa_secret) {
     throw new Error("Aucun secret MFA trouvé pour cet utilisateur");
   }

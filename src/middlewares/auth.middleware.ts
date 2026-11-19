@@ -21,7 +21,7 @@ declare global {
   }
 }
 
-export function authenticate(req: Request, _res: Response, next: NextFunction): void {
+export function authenticate(req: Request, res: Response, next: NextFunction): void {
   const header = req.headers.authorization;
 
   if (!header || !header.startsWith("Bearer ")) {
@@ -89,7 +89,10 @@ export function authenticate(req: Request, _res: Response, next: NextFunction): 
         throw new UnauthorizedError("Token révoqué");
       }
 
-      req.user = decoded;
+      // Rôle et e-mail relus en base : un rôle retiré s'applique tout de suite, sans attendre
+      // l'expiration du jeton.
+      req.user = { ...decoded, userTypeId: user.user_type_id, email: user.email };
+      res.locals.mustChangePassword = user.force_password_change;
       next();
     })
     .catch(next);
@@ -142,10 +145,23 @@ export function requireReauthentication(req: Request, _res: Response, next: Next
     .catch(next);
 }
 
-export function requireSuperAdmin(req: Request, _res: Response, next: NextFunction): void {
+/**
+ * Mot de passe temporaire pas encore changé : aucune route d'administration n'est accessible
+ * (lecture des candidatures comprise) tant qu'il n'a pas été remplacé.
+ */
+function blockIfPasswordChangeRequired(res: Response): boolean {
+  if (res.locals.mustChangePassword) {
+    res.status(403).json({ error: "Changement de mot de passe obligatoire", forcePasswordChange: true });
+    return true;
+  }
+  return false;
+}
+
+export function requireSuperAdmin(req: Request, res: Response, next: NextFunction): void {
   if (!req.user) {
     throw new UnauthorizedError("Non authentifié");
   }
+  if (blockIfPasswordChangeRequired(res)) return;
 
   if (req.user.userTypeId !== 1) {
     throw new ForbiddenError("Accès réservé au super administrateur");
@@ -161,10 +177,11 @@ export function requireSuperAdmin(req: Request, _res: Response, next: NextFuncti
   }).finally(() => next());
 }
 
-export function requireAdmin(req: Request, _res: Response, next: NextFunction): void {
+export function requireAdmin(req: Request, res: Response, next: NextFunction): void {
   if (!req.user) {
     throw new UnauthorizedError("Non authentifié");
   }
+  if (blockIfPasswordChangeRequired(res)) return;
 
   if (req.user.userTypeId !== 1 && req.user.userTypeId !== 2) {
     throw new ForbiddenError("Accès réservé aux administrateurs");

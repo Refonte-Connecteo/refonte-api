@@ -37,3 +37,10 @@ export class BadRequestError extends AppError {
     super(message, 400);
   }
 }
+
+/** 429 : trop de tentatives (compte verrouillé temporairement). */
+export class TooManyRequestsError extends AppError {
+  constructor(message: string = "Trop de tentatives") {
+    super(message, 429);
+  }
+}

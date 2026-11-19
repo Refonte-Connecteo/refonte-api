@@ -29,7 +29,8 @@ export const env = {
     .split(",")
     .map((domain) => domain.trim().toLowerCase())
     .filter(Boolean),
-  AUDIT_RETENTION_DAYS: parseInt(process.env.AUDIT_RETENTION_DAYS || "7", 10),
+  // Journal d'audit : 1 an par défaut, pour pouvoir enquêter sur un incident découvert tardivement.
+  AUDIT_RETENTION_DAYS: parseInt(process.env.AUDIT_RETENTION_DAYS || "365", 10),
   // Politique de rétention RGPD (purge automatique des données expirées)
   APPLICATION_RETENTION_MONTHS: parseInt(process.env.APPLICATION_RETENTION_MONTHS || "24", 10),
   CONTACT_MESSAGE_RETENTION_MONTHS: parseInt(

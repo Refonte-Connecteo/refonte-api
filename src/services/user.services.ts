@@ -1,4 +1,4 @@
-﻿import { randomBytes, timingSafeEqual } from "node:crypto";
+﻿import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import prisma from "../lib/prisma.js";
@@ -9,6 +9,7 @@ import {
   ForbiddenError,
   ConflictError,
   BadRequestError,
+  TooManyRequestsError,
 } from "../errors/index.js";
 import {
   createMfaSecret,
@@ -16,9 +17,10 @@ import {
   createQrCodeDataUri,
   generateRecoveryCodes,
   hashRecoveryCode,
-  isValidTotpCode,
+  verifyTotp,
   MFA_TOKEN_TTL,
 } from "./mfa.service.js";
+import { assertPasswordPolicy } from "../utils/passwordPolicy.js";
 import {
   signAccessToken,
   signRefreshToken,
@@ -26,6 +28,7 @@ import {
   revokeAllTokensForUser,
   verifyRefreshToken,
   type RefreshTokenPayload,
+  isTokenRevoked,
 } from "./token.service.js";
 import {
   logAuditEvent,
@@ -41,6 +44,65 @@ const BCRYPT_ROUNDS = 12;
 const INVITATION_TTL_MS = 72 * 60 * 60 * 1000;
 /** Lien de réinitialisation d'accès émis par un super administrateur : court, car il ouvre un compte existant. */
 const ACCESS_RESET_TTL_MS = 60 * 60 * 1000;
+
+/** Verrouillage : après 5 échecs (mot de passe ou code MFA), 15 min de blocage, prolongé à chaque nouvel échec. */
+const MAX_FAILED_ATTEMPTS = 5;
+const LOCK_DURATION_MS = 15 * 60 * 1000;
+
+/**
+ * Empreinte bcrypt factice, comparée quand le compte n'existe pas : la réponse prend alors le
+ * même temps qu'avec un vrai compte (impossible de deviner les adresses existantes au chrono).
+ */
+const DUMMY_PASSWORD_HASH = bcrypt.hashSync(randomBytes(24).toString("hex"), BCRYPT_ROUNDS);
+
+/** Message unique : ne révèle ni si le compte existe, ni s'il est inactif ou en attente. */
+const INVALID_CREDENTIALS = "Email ou mot de passe incorrect";
+const INVALID_ACTIVATION_LINK = "Le lien d'activation est invalide, expiré ou a déjà été utilisé";
+
+/** Adresse e-mail comparée sans tenir compte de la casse ni des espaces. */
+export function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
+function findUserByEmail(email: string) {
+  return prisma.user.findFirst({
+    where: { email: { equals: normalizeEmail(email), mode: "insensitive" } },
+    include: { user_type: true },
+  }) as unknown as Promise<(UserResult & { user_type: { id: number; type: string } }) | null>;
+}
+
+/** Les liens d'invitation et de réinitialisation ne sont stockés en base que sous forme d'empreinte. */
+function hashLinkToken(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
+}
+
+/** Échec (mot de passe ou code MFA) : le compte est verrouillé 15 min au-delà de 5 échecs consécutifs. */
+async function registerFailedAttempt(userId: number): Promise<void> {
+  const updated = await prisma.user.update({
+    where: { id: userId },
+    data: { failed_login_count: { increment: 1 } },
+  });
+  if (updated.failed_login_count >= MAX_FAILED_ATTEMPTS) {
+    await prisma.user.update({
+      where: { id: userId },
+      data: { locked_until: new Date(Date.now() + LOCK_DURATION_MS) },
+    });
+  }
+}
+
+function assertNotLocked(user: { locked_until?: Date | null }): void {
+  if (user.locked_until && user.locked_until > new Date()) {
+    const minutes = Math.ceil((user.locked_until.getTime() - Date.now()) / 60_000);
+    throw new TooManyRequestsError(`Trop de tentatives : réessayez dans ${minutes} minute${minutes > 1 ? "s" : ""}.`);
+  }
+}
+
+/** Le jeton MFA (étape entre mot de passe et code) ne sert qu'une fois. */
+async function assertMfaTokenUnused(mfaToken: string): Promise<void> {
+  if (await isTokenRevoked(mfaToken)) {
+    throw new UnauthorizedError("Token MFA invalide ou expiré");
+  }
+}
 
 /** Comparaison à temps constant pour les jetons d'invitation. */
 function secureTokenEqual(a: string, b: string): boolean {
@@ -90,11 +152,21 @@ export interface UserResult {
   token_version: number;
   force_password_change: boolean;
   last_login_at: Date | null;
+  failed_login_count?: number;
+  locked_until?: Date | null;
+  mfa_last_used_step?: number | null;
 }
 
 export type SafeUser = Omit<
   UserResult,
-  "password_hash" | "invitation_token" | "invitation_token_expires" | "mfa_secret" | "mfa_recovery_codes"
+  | "password_hash"
+  | "invitation_token"
+  | "invitation_token_expires"
+  | "mfa_secret"
+  | "mfa_recovery_codes"
+  | "failed_login_count"
+  | "locked_until"
+  | "mfa_last_used_step"
 >;
 
 export interface MfaSetupResult {
@@ -149,7 +221,7 @@ export type MfaTokenPayload = {
 };
 
 function toSafeUser(u: UserResult): SafeUser {
-  const { password_hash, invitation_token, invitation_token_expires, mfa_secret, mfa_recovery_codes, ...safe } = u;
+  const { password_hash, invitation_token, invitation_token_expires, mfa_secret, mfa_recovery_codes, failed_login_count, locked_until, mfa_last_used_step, ...safe } = u;
   return safe;
 }
 
@@ -203,7 +275,8 @@ export async function inviteAdmin(email: string, username: string, ctx?: AuditCo
     resourceType: "user",
     details: { email, username, user_type_id: typeId },
   }), async () => {
-    const existingEmail = await prisma.user.findUnique({ where: { email } });
+    email = normalizeEmail(email);
+    const existingEmail = await findUserByEmail(email);
     if (existingEmail) {
       throw new ConflictError("Un utilisateur avec cet email existe déjà");
     }
@@ -223,45 +296,13 @@ export async function inviteAdmin(email: string, username: string, ctx?: AuditCo
         password_hash: null,
         user_type_id: typeId,
         is_active: false,
-        invitation_token,
+        invitation_token: hashLinkToken(invitation_token),
         invitation_token_expires,
       },
     }) as unknown as UserResult;
 
     return { user: toSafeUser(user), invitation_token, invitation_token_expires };
   });
-}
-
-export async function checkPendingAdmin(email: string): Promise<SafeUser> {
-  const user = await prisma.user.findUnique({
-    where: { email },
-  }) as unknown as UserResult | null;
-
-  if (!user) {
-    throw new NotFoundError("Aucun compte trouvé avec cet email");
-  }
-
-  if (user.user_type_id !== 2) {
-    throw new BadRequestError("Cet email ne correspond pas à un administrateur");
-  }
-
-  if (user.is_active) {
-    throw new BadRequestError("Ce compte est déjà actif. Veuillez vous connecter.");
-  }
-
-  if (user.password_hash) {
-    throw new BadRequestError("Ce compte a déjà un mot de passe. Veuillez vous connecter.");
-  }
-
-  if (!user.invitation_token || !user.invitation_token_expires) {
-    throw new BadRequestError("Aucun lien d'activation n'a été émis pour ce compte.");
-  }
-
-  if (user.invitation_token_expires < new Date()) {
-    throw new BadRequestError("Le lien d'invitation a expiré. Contactez un super administrateur.");
-  }
-
-  return toSafeUser(user);
 }
 
 export async function setPassword(email: string, password: string, invitationToken: string, ctx?: AuditContext): Promise<MfaSetupResult> {
@@ -273,28 +314,23 @@ export async function setPassword(email: string, password: string, invitationTok
     resourceType: "user",
     details: { email },
   }), async () => {
-    if (password.length < 8) {
-      throw new BadRequestError("Le mot de passe doit contenir au moins 8 caractères");
-    }
+    assertPasswordPolicy(password, { email });
 
-    const user = await prisma.user.findUnique({
-      where: { email },
-    }) as unknown as UserResult | null;
+    const user = await findUserByEmail(email);
 
-    if (!user) {
-      throw new NotFoundError("Aucun compte trouvé avec cet email");
-    }
+    // Une seule réponse pour un compte inconnu, déjà activé, un lien faux ou expiré :
+    // la page ne révèle pas quelles adresses correspondent à un compte.
+    const tokenMatches =
+      !!user?.invitation_token &&
+      !!invitationToken &&
+      secureTokenEqual(hashLinkToken(invitationToken), user.invitation_token);
 
-    if (user.password_hash) {
-      throw new BadRequestError("Ce compte a déjà un mot de passe");
-    }
-
-    if (!user.invitation_token || !invitationToken || !secureTokenEqual(invitationToken, user.invitation_token)) {
-      throw new UnauthorizedError("Le lien d'activation est invalide ou a déjà été utilisé");
+    if (!user || user.password_hash || !tokenMatches) {
+      throw new UnauthorizedError(INVALID_ACTIVATION_LINK);
     }
 
     if (!user.invitation_token_expires || user.invitation_token_expires < new Date()) {
-      throw new UnauthorizedError("Le lien d'activation a expiré");
+      throw new UnauthorizedError(INVALID_ACTIVATION_LINK);
     }
 
     const hashedPassword = await bcrypt.hash(password, BCRYPT_ROUNDS);
@@ -306,6 +342,8 @@ export async function setPassword(email: string, password: string, invitationTok
         is_active: true,
         invitation_token: null,
         invitation_token_expires: null,
+        failed_login_count: 0,
+        locked_until: null,
       },
     }) as unknown as UserResult;
 
@@ -324,49 +362,48 @@ export async function setPassword(email: string, password: string, invitationTok
 }
 
 export async function login(email: string, password: string, ctx?: AuditContext): Promise<LoginResult> {
-  const user = await prisma.user.findUnique({
-    where: { email },
-    include: { user_type: true },
-  }) as unknown as (UserResult & { user_type: { id: number; type: string } }) | null;
+  const user = await findUserByEmail(email);
 
-  const logFailedLogin = async (error: unknown): Promise<void> => {
+  const logFailedLogin = async (error: unknown, reason: string): Promise<void> => {
     await logAuditEvent({
       eventType: AuditEventType.LOGIN_FAILED,
       action: "Tentative de connexion",
       success: false,
-      statusCode: 401,
+      statusCode: error instanceof TooManyRequestsError ? 429 : 401,
       errorCode: errorCodeFrom(error, "LOGIN_FAILED"),
       actorEmail: email,
-      details: { email },
+      // La raison précise reste dans le journal, jamais dans la réponse.
+      details: { email, reason },
       meta: ctx?.meta,
     });
   };
 
-  if (!user) {
-    await logFailedLogin(new UnauthorizedError("Email ou mot de passe incorrect"));
-    throw new UnauthorizedError("Email ou mot de passe incorrect");
+  if (user) {
+    try {
+      assertNotLocked(user);
+    } catch (err) {
+      await logFailedLogin(err, "locked");
+      throw err;
+    }
   }
 
-  if (!user.is_active) {
-    await logFailedLogin(new ForbiddenError("Ce compte n'est pas actif"));
-    throw new ForbiddenError("Ce compte n'est pas actif");
-  }
+  // Toujours une vérification bcrypt, même sans compte : même durée de réponse dans tous les cas.
+  const isValid = await bcrypt.compare(password, user?.password_hash ?? DUMMY_PASSWORD_HASH);
 
-  if (!user.password_hash) {
-    await logFailedLogin(new UnauthorizedError("Vous devez d'abord définir votre mot de passe via le lien d'invitation"));
-    throw new UnauthorizedError("Vous devez d'abord définir votre mot de passe via le lien d'invitation");
-  }
-
-  const isValid = await bcrypt.compare(password, user.password_hash);
-  if (!isValid) {
-    await logFailedLogin(new UnauthorizedError("Email ou mot de passe incorrect"));
-    throw new UnauthorizedError("Email ou mot de passe incorrect");
+  if (!user || !user.is_active || !user.password_hash || !isValid) {
+    const reason = !user ? "unknown_email" : !user.is_active ? "inactive" : !user.password_hash ? "no_password" : "bad_password";
+    if (user && user.password_hash) {
+      await registerFailedAttempt(user.id);
+    }
+    const err = new UnauthorizedError(INVALID_CREDENTIALS);
+    await logFailedLogin(err, reason);
+    throw err;
   }
 
   if (user.mfa_enabled) {
     await logAuditEvent({
       eventType: AuditEventType.LOGIN_SUCCESS,
-      action: "Connexion réussie",
+      action: "Mot de passe vérifié, code MFA attendu",
       success: true,
       statusCode: 200,
       actorUserId: user.id,
@@ -387,7 +424,7 @@ export async function login(email: string, password: string, ctx?: AuditContext)
 
   await logAuditEvent({
     eventType: AuditEventType.LOGIN_SUCCESS,
-    action: "Connexion réussie",
+    action: "Mot de passe vérifié, activation du MFA attendue",
     success: true,
     statusCode: 200,
     actorUserId: user.id,
@@ -417,6 +454,7 @@ export async function confirmMfaSetup(mfaToken: string, code: string, ctx?: Audi
     meta: ctx?.meta,
   }), async () => {
     const userId = extractMfaPendingUserId(mfaToken);
+    await assertMfaTokenUnused(mfaToken);
 
     const user = await prisma.user.findUnique({
       where: { id: userId },
@@ -434,7 +472,8 @@ export async function confirmMfaSetup(mfaToken: string, code: string, ctx?: Audi
       throw new BadRequestError("Le MFA est déjà activé sur ce compte");
     }
 
-    if (!isValidTotpCode(code, user.mfa_secret)) {
+    const step = verifyTotp(code, user.mfa_secret, user.mfa_last_used_step);
+    if (step === null) {
       throw new UnauthorizedError("Code de vérification invalide");
     }
 
@@ -444,9 +483,13 @@ export async function confirmMfaSetup(mfaToken: string, code: string, ctx?: Audi
       data: {
         mfa_enabled: true,
         last_login_at: new Date(),
+        mfa_last_used_step: step,
+        failed_login_count: 0,
+        locked_until: null,
         mfa_recovery_codes: recoveryCodes.map(hashRecoveryCode),
       },
     }) as unknown as UserResult;
+    await revokeToken(mfaToken, user.id);
 
     return {
       user: toSafeUser(updated),
@@ -466,6 +509,7 @@ export async function verifyMfa(mfaToken: string, code: string, ctx?: AuditConte
     errorCode: success ? undefined : errorCodeFrom(error),
   }), async () => {
     const userId = extractMfaPendingUserId(mfaToken);
+    await assertMfaTokenUnused(mfaToken);
 
     const user = await prisma.user.findUnique({
       where: { id: userId },
@@ -479,14 +523,20 @@ export async function verifyMfa(mfaToken: string, code: string, ctx?: AuditConte
       throw new BadRequestError("Le MFA n'est pas activé sur ce compte");
     }
 
-    if (!isValidTotpCode(code, user.mfa_secret)) {
+    assertNotLocked(user);
+
+    // Un code déjà utilisé (même pas de temps de 30 s) est refusé : il ne peut pas être rejoué.
+    const step = verifyTotp(code, user.mfa_secret, user.mfa_last_used_step);
+    if (step === null) {
+      await registerFailedAttempt(user.id);
       throw new UnauthorizedError("Code de vérification invalide");
     }
 
     await prisma.user.update({
       where: { id: user.id },
-      data: { last_login_at: new Date() },
+      data: { last_login_at: new Date(), mfa_last_used_step: step, failed_login_count: 0, locked_until: null },
     });
+    await revokeToken(mfaToken, user.id);
 
     return { user: toSafeUser(user), token: signAccessToken(user), refreshToken: signRefreshToken(user), forcePasswordChange: user.force_password_change };
   });
@@ -506,6 +556,7 @@ export async function verifyMfaRecoveryCode(mfaToken: string, recoveryCode: stri
     details: { method: "recovery_code", ...(success ? { remaining } : {}) },
   }), async () => {
     const userId = extractMfaPendingUserId(mfaToken);
+    await assertMfaTokenUnused(mfaToken);
     const user = await prisma.user.findUnique({ where: { id: userId } }) as unknown as UserResult | null;
 
     if (!user) {
@@ -514,6 +565,7 @@ export async function verifyMfaRecoveryCode(mfaToken: string, recoveryCode: stri
     if (!user.mfa_secret || !user.mfa_enabled) {
       throw new BadRequestError("Le MFA n'est pas activé sur ce compte");
     }
+    assertNotLocked(user);
 
     const hash = hashRecoveryCode(recoveryCode);
     const left = user.mfa_recovery_codes.filter((h) => h !== hash);
@@ -525,9 +577,12 @@ export async function verifyMfaRecoveryCode(mfaToken: string, recoveryCode: stri
       : { count: 0 };
 
     if (consumed.count !== 1) {
+      await registerFailedAttempt(user.id);
       throw new UnauthorizedError("Code de secours invalide ou déjà utilisé");
     }
 
+    await prisma.user.update({ where: { id: user.id }, data: { failed_login_count: 0, locked_until: null } });
+    await revokeToken(mfaToken, user.id);
     remaining = left.length;
     return {
       user: toSafeUser(user),
@@ -613,7 +668,10 @@ export async function resetAdminAccess(targetId: number, ctx?: AuditContext): Pr
         mfa_enabled: false,
         mfa_recovery_codes: [],
         force_password_change: false,
-        invitation_token: reset_token,
+        failed_login_count: 0,
+        locked_until: null,
+        mfa_last_used_step: null,
+        invitation_token: hashLinkToken(reset_token),
         invitation_token_expires: reset_token_expires,
       },
     }) as unknown as UserResult;
@@ -717,15 +775,13 @@ export async function changePassword(userId: number, newPassword: string, ctx?: 
     resourceType: "user",
     resourceId: String(userId),
   }), async () => {
-    if (newPassword.length < 8) {
-      throw new BadRequestError("Le mot de passe doit contenir au moins 8 caractères");
-    }
-
     const user = await prisma.user.findUnique({ where: { id: userId } }) as unknown as UserResult | null;
 
     if (!user) {
       throw new NotFoundError("Utilisateur");
     }
+
+    assertPasswordPolicy(newPassword, { email: user.email });
 
     const hashedPassword = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
 
@@ -747,15 +803,13 @@ export async function forceChangePassword(userId: number, newPassword: string, c
     resourceType: "user",
     resourceId: String(userId),
   }), async () => {
-    if (newPassword.length < 8) {
-      throw new BadRequestError("Le mot de passe doit contenir au moins 8 caractères");
-    }
-
     const user = await prisma.user.findUnique({ where: { id: userId } }) as unknown as UserResult | null;
 
     if (!user) {
       throw new NotFoundError("Utilisateur");
     }
+
+    assertPasswordPolicy(newPassword, { email: user.email });
 
     if (!user.force_password_change) {
       throw new BadRequestError("Aucun changement de mot de passe obligatoire en cours");
@@ -787,7 +841,7 @@ export async function forceChangePassword(userId: number, newPassword: string, c
   });
 }
 
-export async function disableMfa(userId: number, ctx?: AuditContext): Promise<SafeUser> {
+export async function disableMfa(userId: number, code: string, ctx?: AuditContext): Promise<SafeUser> {
   return withAudit(ctx, (success, error) => ({
     eventType: AuditEventType.MFA_DISABLED,
     action: "Désactivation du MFA",
@@ -802,8 +856,13 @@ export async function disableMfa(userId: number, ctx?: AuditContext): Promise<Sa
       throw new NotFoundError("Utilisateur");
     }
 
-    if (!user.mfa_enabled) {
+    if (!user.mfa_enabled || !user.mfa_secret) {
       throw new BadRequestError("Le MFA n'est pas activé sur ce compte");
+    }
+
+    // Un mot de passe volé ne suffit pas : il faut aussi le code de l'application.
+    if (verifyTotp(code, user.mfa_secret, user.mfa_last_used_step) === null) {
+      throw new UnauthorizedError("Code de vérification invalide");
     }
 
     const updated = await prisma.user.update({
@@ -812,6 +871,7 @@ export async function disableMfa(userId: number, ctx?: AuditContext): Promise<Sa
         mfa_secret: null,
         mfa_enabled: false,
         mfa_recovery_codes: [],
+        mfa_last_used_step: null,
       },
     }) as unknown as UserResult;
 

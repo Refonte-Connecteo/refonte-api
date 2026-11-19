@@ -2,7 +2,8 @@ import { createHash, randomInt } from "node:crypto";
 import { generateSecret, generateURI, generateSync, verifySync } from "otplib";
 import QRCode from "qrcode";
 
-export const MFA_ISSUER = "MonApp";
+/** Nom affiché dans l'application d'authentification (Google/Microsoft Authenticator). */
+export const MFA_ISSUER = "Connecteo";
 export const MFA_TOKEN_TTL = "10m" as const;
 
 const MFA_EPOCH_TOLERANCE_SECONDS = 30;
@@ -26,6 +27,21 @@ export function generateTotpCode(secret: string): string {
 
 export function isValidTotpCode(code: string, secret: string): boolean {
   return verifySync({ secret, token: code, epochTolerance: MFA_EPOCH_TOLERANCE_SECONDS }).valid;
+}
+
+/**
+ * Vérifie un code TOTP et renvoie son pas de temps (30 s), ou null s'il est invalide.
+ * `afterTimeStep` : dernier pas déjà utilisé. Un code de ce pas ou d'un pas antérieur est refusé,
+ * si bien qu'un code intercepté ne peut pas être rejoué.
+ */
+export function verifyTotp(code: string, secret: string, afterTimeStep?: number | null): number | null {
+  const result = verifySync({
+    secret,
+    token: code,
+    epochTolerance: MFA_EPOCH_TOLERANCE_SECONDS,
+    ...(typeof afterTimeStep === "number" ? { afterTimeStep } : {}),
+  }) as { valid: boolean; timeStep?: number };
+  return result.valid && typeof result.timeStep === "number" ? result.timeStep : null;
 }
 
 export function isSixDigitCode(code: unknown): code is string {

@@ -35,6 +35,12 @@ model user {
   force_password_change Boolean   @default(false)
   token_version        Int       @default(0)
   last_login_at        DateTime?
+  /// Échecs de connexion consécutifs (mot de passe ou code MFA) ; remis à zéro à la connexion réussie.
+  failed_login_count   Int       @default(0)
+  /// Compte verrouillé jusqu'à cette date après trop d'échecs.
+  locked_until         DateTime?
+  /// Dernier pas de temps TOTP accepté : un même code ne peut pas servir deux fois.
+  mfa_last_used_step   Int?
   user_type            user_type @relation(fields: [user_type_id], references: [id])
 }
 

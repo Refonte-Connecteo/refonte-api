@@ -13,10 +13,18 @@ const adapter = new PrismaPg({
 
 const baseClient = new PrismaClient({ adapter });
 
+/**
+ * Champs chiffrés en base (AES-256-GCM, clé ENCRYPTION_KEY) : données personnelles des visiteurs,
+ * textes libres qu'ils écrivent, et secret de double authentification des administrateurs
+ * (une copie de la base ne permet alors pas de générer leurs codes).
+ * Les anciennes valeurs en clair restent lisibles (decryptOrPassthrough) et sont chiffrées à la
+ * prochaine écriture.
+ */
 const SENSITIVE_FIELDS: Record<string, readonly string[]> = {
-  application: ["first_name", "last_name", "email", "phone"],
-  spontaneous_application: ["first_name", "last_name", "email", "phone"],
-  contact_message: ["first_name", "last_name", "email", "phone"],
+  application: ["first_name", "last_name", "email", "phone", "cover_letter"],
+  spontaneous_application: ["first_name", "last_name", "email", "phone", "motivation"],
+  contact_message: ["first_name", "last_name", "email", "phone", "company", "message"],
+  user: ["mfa_secret"],
 };
 
 type DataRecord = Record<string, unknown>;
@@ -61,6 +69,56 @@ function decryptData(model: string, result: unknown): void {
 
 const prisma = baseClient.$extends({
   query: {
+    user: {
+      async create({ args, query }) {
+        encryptData("user", args.data as unknown as DataRecord);
+        const result = await query(args);
+        decryptData("user", result);
+        return result;
+      },
+      async createMany({ args, query }) {
+        const rows = Array.isArray(args.data) ? args.data : [args.data];
+        for (const row of rows) {
+          encryptData("user", row as unknown as DataRecord);
+        }
+        return query(args);
+      },
+      async update({ args, query }) {
+        encryptData("user", args.data as unknown as DataRecord);
+        const result = await query(args);
+        decryptData("user", result);
+        return result;
+      },
+      async updateMany({ args, query }) {
+        encryptData("user", args.data as unknown as DataRecord);
+        return query(args);
+      },
+      async findUnique({ args, query }) {
+        const result = await query(args);
+        decryptData("user", result);
+        return result;
+      },
+      async findUniqueOrThrow({ args, query }) {
+        const result = await query(args);
+        decryptData("user", result);
+        return result;
+      },
+      async findFirst({ args, query }) {
+        const result = await query(args);
+        decryptData("user", result);
+        return result;
+      },
+      async findFirstOrThrow({ args, query }) {
+        const result = await query(args);
+        decryptData("user", result);
+        return result;
+      },
+      async findMany({ args, query }) {
+        const result = await query(args);
+        decryptData("user", result);
+        return result;
+      },
+    },
     application: {
       async create({ args, query }) {
         encryptData("application", args.data as unknown as DataRecord);

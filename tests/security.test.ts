@@ -156,10 +156,16 @@ describe("Sécurité des tokens — réauthentification des opérations sensible
     const user = await createMfaUser();
     const { token } = await loginViaApi(user.email, user.password);
 
-    const disableRes = await api
+    const withoutCode = await api
       .post("/api/auth/mfa/disable")
       .set("Authorization", `Bearer ${token}`)
       .send({ currentPassword: user.password });
+    expect(withoutCode.status).toBe(400);
+
+    const disableRes = await api
+      .post("/api/auth/mfa/disable")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ currentPassword: user.password, code: await totpCodeFor(user.id) });
     expect(disableRes.status).toBe(200);
     expect(disableRes.body.user.mfa_enabled).toBe(false);
 

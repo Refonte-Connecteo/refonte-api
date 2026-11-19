@@ -88,8 +88,8 @@ describe("Cycle de vie des accès — invitation tokenisée", () => {
 
     const reuse = await api
       .post("/api/admin/set-password")
-      .send({ email: "reuse@connecteo.mg", password: "AutreMdp123!", invitationToken });
-    expect(reuse.status).toBe(400);
+      .send({ email: "reuse@connecteo.mg", password: "AutreMotDePasse123!", invitationToken });
+    expect(reuse.status).toBe(401);
   });
 
   it("refuse un token d'invitation expiré (set-password et check-pending)", async () => {
@@ -112,8 +112,9 @@ describe("Cycle de vie des accès — invitation tokenisée", () => {
     expect(res.status).toBe(401);
     expect((await prisma.user.findUnique({ where: { id: user.id } }))?.password_hash).toBeNull();
 
+    // La route check-pending, qui révélait si une adresse correspond à un compte, n'existe plus.
     const pending = await api.post("/api/admin/check-pending").send({ email: "expire@connecteo.mg" });
-    expect(pending.status).toBe(400);
+    expect(pending.status).toBe(404);
   });
 
   it("journalise le refus d'activation comme PASSWORD_SET en échec", async () => {
@@ -132,7 +133,7 @@ describe("Cycle de vie des accès — invitation tokenisée", () => {
       .post("/api/admin/set-password")
       .send({ email: "audit-invite@connecteo.mg", password: ADMIN_PASSWORD, invitationToken: inviteRes.body.invitation_token });
 
-    expect(fail.status).toBe(400);
+    expect(fail.status).toBe(401);
     const failedLog = await prisma.audit_log.findFirst({
       where: { event_type: "PASSWORD_SET", success: false },
     });

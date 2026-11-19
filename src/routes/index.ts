@@ -18,7 +18,6 @@ import {
   handleDeactivateAdmin,
   handleDeleteAdmin,
   handleGetProfile,
-  handleCheckPending,
   handleRefresh,
   handleLogout,
   handleLogoutAll,
@@ -53,16 +52,12 @@ const setPasswordValidation = validateRequest([
   body("email").trim().isEmail().withMessage("Email invalide"),
   body("password")
     .isString()
-    .isLength({ min: 8 })
-    .withMessage("Le mot de passe doit contenir au moins 8 caractères"),
+    .isLength({ min: 12 })
+    .withMessage("Le mot de passe doit contenir au moins 12 caractères"),
   body("invitationToken")
     .isString()
     .notEmpty()
     .withMessage("Le token d'invitation est requis"),
-]);
-
-const checkPendingValidation = validateRequest([
-  body("email").trim().isEmail().withMessage("Email invalide"),
 ]);
 
 const mfaValidation = validateRequest([
@@ -99,7 +94,6 @@ const refreshValidation = validateRequest([
 // Public routes (rate limited)
 router.post("/admin/login", authLimiter, loginValidation, handleLogin);
 router.post("/admin/set-password", authLimiter, setPasswordValidation, handleSetPassword);
-router.post("/admin/check-pending", authLimiter, checkPendingValidation, handleCheckPending);
 
 // Auth routes (MFA onboarding + verification)
 router.post("/auth/login", authLimiter, loginValidation, handleLogin);
@@ -118,12 +112,13 @@ router.post("/auth/logout", authenticate, handleLogout);
 router.post("/auth/logout-all", authenticate, handleLogoutAll);
 
 // Sensitive operations — require the current password even with a valid JWT
-router.post("/auth/change-password", authenticate, requireReauthentication, handleChangePassword);
-router.post("/auth/mfa/disable", authenticate, requireReauthentication, handleDisableMfa);
+// Routes qui vérifient un mot de passe : limitées comme la connexion (5 essais / 30 s par IP).
+router.post("/auth/change-password", authLimiter, authenticate, requireReauthentication, handleChangePassword);
+router.post("/auth/mfa/disable", authLimiter, authenticate, requireReauthentication, handleDisableMfa);
 router.post("/auth/mfa/recovery-codes", authLimiter, authenticate, requireReauthentication, handleRegenerateRecoveryCodes);
 
 // Force change password — accessible when force_password_change is active
-router.post("/auth/force-change-password", authenticate, handleForceChangePassword);
+router.post("/auth/force-change-password", authLimiter, authenticate, handleForceChangePassword);
 
 // SuperAdmin only routes
 router.post("/admin/invite", authenticate, requireSuperAdmin, forcePasswordChange, handleInviteAdmin);

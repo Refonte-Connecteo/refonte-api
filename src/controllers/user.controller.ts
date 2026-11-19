@@ -7,7 +7,6 @@ import {
   deactivateAdmin,
   deleteAdmin,
   getProfile,
-  checkPendingAdmin,
   confirmMfaSetup,
   verifyMfa,
   changePassword,
@@ -49,18 +48,6 @@ export const handleInviteAdmin = asyncHandler(async (req: Request, res: Response
     invitation_token: user.invitation_token,
     invitation_token_expires: user.invitation_token_expires,
   });
-});
-
-export const handleCheckPending = asyncHandler(async (req: Request, res: Response) => {
-  const { email } = req.body;
-
-  if (!email) {
-    res.status(400).json({ error: "Email requis" });
-    return;
-  }
-
-  const user = await checkPendingAdmin(email);
-  res.json({ message: "Compte en attente trouvé", user });
 });
 
 export const handleSetPassword = asyncHandler(async (req: Request, res: Response) => {
@@ -279,7 +266,14 @@ export const handleDisableMfa = asyncHandler(async (req: Request, res: Response)
     return;
   }
 
-  const user = await disableMfa(req.user.userId, {
+  // En plus du mot de passe (vérifié par la route), le code de l'application est exigé.
+  const { code } = req.body ?? {};
+  if (!isSixDigitCode(code)) {
+    res.status(400).json({ error: "Le code à 6 chiffres de votre application est requis" });
+    return;
+  }
+
+  const user = await disableMfa(req.user.userId, code, {
     meta: buildAuditMeta(req),
     actorUserId: req.user.userId,
     actorEmail: req.user.email,

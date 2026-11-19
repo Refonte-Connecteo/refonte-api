@@ -20,7 +20,7 @@ describe("Changement de mot de passe forcé (premier login)", () => {
   it("le endpoint force-change-password fonctionne sans authentification (error 401)", async () => {
     const res = await api
       .post("/api/auth/force-change-password")
-      .send({ newPassword: "NewPass123!" });
+      .send({ newPassword: "NouveauMotDePasse123!" });
     expect(res.status).toBe(401);
   });
 
@@ -43,7 +43,7 @@ describe("Changement de mot de passe forcé (premier login)", () => {
     const res = await api
       .post("/api/auth/force-change-password")
       .set("Authorization", `Bearer ${token}`)
-      .send({ newPassword: "NewPass123!" });
+      .send({ newPassword: "NouveauMotDePasse123!" });
     expect(res.status).toBe(400);
     expect(res.body.error).toBe("Aucun changement de mot de passe obligatoire en cours");
   });
@@ -91,7 +91,7 @@ describe("Changement de mot de passe forcé (premier login)", () => {
     const res = await api
       .post("/api/auth/force-change-password")
       .set("Authorization", `Bearer ${token}`)
-      .send({ newPassword: "NewPass456!" });
+      .send({ newPassword: "NouveauMotDePasse456!" });
 
     expect(res.status).toBe(200);
     expect(res.body.message).toBe("Mot de passe modifié avec succès. Veuillez vous reconnecter.");
@@ -101,7 +101,7 @@ describe("Changement de mot de passe forcé (premier login)", () => {
     const updated = await prisma.user.findUnique({ where: { id: user.id } });
     expect(updated?.force_password_change).toBe(false);
 
-    const match = await bcrypt.compare("NewPass456!", updated!.password_hash!);
+    const match = await bcrypt.compare("NouveauMotDePasse456!", updated!.password_hash!);
     expect(match).toBe(true);
 
     const matchOld = await bcrypt.compare("OldPass123!", updated!.password_hash!);
@@ -119,7 +119,7 @@ describe("Changement de mot de passe forcé (premier login)", () => {
     const res = await api
       .post("/api/auth/force-change-password")
       .set("Authorization", `Bearer ${token}`)
-      .send({ newPassword: "NewPass456!" });
+      .send({ newPassword: "NouveauMotDePasse456!" });
 
     expect(res.status).toBe(200);
 
@@ -192,7 +192,7 @@ describe("Middleware forcePasswordChange — blocage des routes admin", () => {
     await api
       .post("/api/auth/force-change-password")
       .set("Authorization", `Bearer ${oldToken}`)
-      .send({ newPassword: "NewPass456!" });
+      .send({ newPassword: "NouveauMotDePasse456!" });
 
     const res = await api
       .get("/api/admin")

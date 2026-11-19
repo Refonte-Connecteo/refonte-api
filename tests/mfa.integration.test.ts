@@ -36,14 +36,10 @@ describe("MFA integration — registration & onboarding obligatoire", () => {
     const invitationToken = inviteRes.body.invitation_token as string;
     expect(invitationToken).toBeTruthy();
 
-    // 2. Compte en attente
-    const pendingRes = await api
-      .post("/api/admin/check-pending")
-      .send({ email: "invited@connecteo.mg" });
-
-    expect(pendingRes.status).toBe(200);
-    expect(pendingRes.body.user.email).toBe("invited@connecteo.mg");
-    expect(pendingRes.body.user.is_active).toBe(false);
+    // 2. Compte en attente (vérifié en base : check-pending n'existe plus, il révélait les comptes)
+    const pending = await prisma.user.findUnique({ where: { email: "invited@connecteo.mg" } });
+    expect(pending?.is_active).toBe(false);
+    expect(pending?.invitation_token).not.toBe(invitationToken);
 
     // 3. Validation de l'invitation = création du compte avec onboarding MFA obligatoire
     const setupRes = await api
