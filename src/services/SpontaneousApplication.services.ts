@@ -1,5 +1,7 @@
 
 import prisma from "../lib/prisma.js";
+import { deleteStoredFile } from "./purge.service.js";
+import { logger } from "../lib/logger.js";
 
 import type { Prisma, spontaneous_application } from "../generated/prisma/client.js";
 import { NotFoundError, BadRequestError } from "../errors/index.js";
@@ -47,7 +49,14 @@ export async function updateSpontaneousApplication(id: number, data: Partial<Spo
 }
 
 export async function deleteSpontaneousApplication(id: number): Promise<void> {
-    await getSpontaneousApplicationById(id);
+    const { cv_url } = await getSpontaneousApplicationById(id);
 
     await prisma.spontaneous_application.delete({ where: { id } });
+
+    // Donnée personnelle : le CV disparaît avec la candidature (best-effort).
+    if (cv_url) {
+        await deleteStoredFile(cv_url).catch((err) =>
+            logger.warn({ err, id }, "Échec de suppression du CV"),
+        );
+    }
 } 

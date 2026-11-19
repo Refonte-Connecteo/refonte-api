@@ -12,7 +12,14 @@ import {
 } from "../middlewares/upload.js";
 import { authenticate, requireAdmin } from "../middlewares/auth.middleware.js";
 import { getSafeFilePath } from "../utils/safeFile.js";
-import { isStorageConfigured, uploadFile } from "../services/storage.service.js";
+import { getFileStream, isStorageConfigured, uploadFile } from "../services/storage.service.js";
+import {
+  PRIVATE_DOCUMENT_EXTENSIONS,
+  PRIVATE_REF_PREFIX,
+  isPrivateFileName,
+  privateDirPath,
+  privateStorageKey,
+} from "../utils/privateFiles.js";
 import { uploadCvLimiter } from "../middlewares/rateLimit.js";
 import {
   logAuditEvent,
@@ -54,6 +61,23 @@ async function persistUploadedFile(
   return { url: `/uploads/${name}`, filename: name };
 }
 
+/**
+ * Document envoyé par un visiteur (CV, pièce jointe) : stocké hors de la partie publique,
+ * sous un nom aléatoire (UUID), et référencé par `/private/<nom>`. Seul un admin peut le lire.
+ */
+async function persistPrivateDocument(file: StoredMulterFile): Promise<{ url: string; filename: string }> {
+  const ext = path.extname(file.originalname).toLowerCase();
+  const safeExt = (PRIVATE_DOCUMENT_EXTENSIONS as readonly string[]).includes(ext) ? ext : ".pdf";
+  const name = `${randomUUID()}${safeExt}`;
+
+  if (isStorageConfigured()) {
+    await uploadFile({ key: privateStorageKey(name), body: file.buffer, contentType: file.mimetype });
+  } else {
+    fs.writeFileSync(path.join(privateDirPath, name), file.buffer);
+  }
+  return { url: `${PRIVATE_REF_PREFIX}${name}`, filename: name };
+}
+
 // Upload générique (admin) : images (10 Mo) et documents. Utilisé par ImageUpload.
 router.post(
   "/",
@@ -92,7 +116,7 @@ router.post(
  * Upload public d'un document (5 Mo, pdf/doc/docx), sans authentification :
  * limité par IP, type vérifié sur le contenu réel du fichier, nom généré côté serveur.
  */
-function publicDocumentUpload(prefix: string, action: string) {
+function publicDocumentUpload(action: string) {
   return [
     uploadCvLimiter,
     uploadCv.single("file"),
@@ -104,14 +128,15 @@ function publicDocumentUpload(prefix: string, action: string) {
       }
 
       try {
-        const { url, filename } = await persistUploadedFile(req.file, prefix);
+        const { url, filename } = await persistPrivateDocument(req.file);
+        // L'adresse du fichier n'est pas recopiée dans le journal : seul son nom aléatoire l'est.
         await logAuditEvent({
           eventType: AuditEventType.FILE_UPLOADED,
           action,
           success: true,
           resourceType: "file",
           resourceId: filename,
-          details: { size: req.file.size, url },
+          details: { size: req.file.size },
           meta: buildAuditMeta(req),
         });
         res.status(201).json({ url, filename });
@@ -123,10 +148,49 @@ function publicDocumentUpload(prefix: string, action: string) {
 }
 
 // CV du formulaire carrière.
-router.post("/cv", ...publicDocumentUpload("cvs", "Upload de CV"));
+router.post("/cv", ...publicDocumentUpload("Upload de CV"));
 
 // Pièce jointe facultative du formulaire de contact (demande de collaboration).
-router.post("/contact", ...publicDocumentUpload("contact", "Upload de pièce jointe de contact"));
+router.post("/contact", ...publicDocumentUpload("Upload de pièce jointe de contact"));
+
+// Lecture d'un CV ou d'une pièce jointe : administrateurs connectés uniquement.
+// Toujours en téléchargement (jamais affiché dans le navigateur), jamais mis en cache.
+router.get("/private/:name", authenticate, requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+  const name = req.params.name as string;
+  if (!isPrivateFileName(name)) {
+    res.status(404).json({ error: "Fichier introuvable" });
+    return;
+  }
+
+  res.setHeader("Content-Disposition", `attachment; filename="${name}"`);
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+
+  try {
+    if (isStorageConfigured()) {
+      const object = await getFileStream(privateStorageKey(name));
+      if (!object) {
+        res.status(404).json({ error: "Fichier introuvable" });
+        return;
+      }
+      res.type(object.contentType ?? path.extname(name));
+      object.body.pipe(res);
+      return;
+    }
+
+    const safePath = getSafeFilePath(privateDirPath, name);
+    if (!safePath) {
+      res.status(404).json({ error: "Fichier introuvable" });
+      return;
+    }
+    res.type(path.extname(name));
+    res.sendFile(safePath, (err) => {
+      if (err && !res.headersSent) res.status(404).json({ error: "Fichier introuvable" });
+    });
+  } catch (err) {
+    next(err);
+  }
+});
 
 // Téléchargement sécurisé : bloque toute tentative de path traversal (403),
 // force le téléchargement pour les documents (pdf/doc/docx) afin de limiter

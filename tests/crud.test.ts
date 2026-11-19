@@ -159,7 +159,8 @@ describe("Images d'événement", () => {
 });
 
 describe("Données personnelles", () => {
-  const person = { first_name: "Alex", last_name: "Martin", email: "alex@exemple.test", phone: "0341234567", cv_url: "/uploads/cv.pdf" };
+  // Référence privée telle que renvoyée par /api/upload/cv (le fichier n'a pas besoin d'exister ici).
+  const person = { first_name: "Alex", last_name: "Martin", email: "alex@exemple.test", phone: "0341234567", cv_url: "/private/0f8fad5b-d9cb-469f-a165-70867728950e.pdf" };
   let jobId: number;
 
   beforeEach(async () => {
@@ -226,17 +227,29 @@ describe("Données personnelles", () => {
 
   it("message de contact : pièce jointe facultative, lien dangereux refusé", async () => {
     const base = { first_name: "A", last_name: "B", email: "a@b.test", message: "Collaboration" };
-    const withFile = await api.post("/api/contact-message").send({ ...base, attachment_url: "/uploads/brief.pdf" });
+    const attachment = "/private/7c9e6679-7425-40de-944b-e07fc1f90ae7.pdf";
+    const withFile = await api.post("/api/contact-message").send({ ...base, attachment_url: attachment });
     expect(withFile.status).toBe(201);
     const id = withFile.body.contactMessage.id as number;
     const read = await api.get(`/api/contact-message/${id}`).set(auth());
-    expect(read.body.contactMessage.attachment_url).toBe("/uploads/brief.pdf");
+    expect(read.body.contactMessage.attachment_url).toBe(attachment);
 
     const without = await api.post("/api/contact-message").send(base);
     expect(without.status).toBe(201);
     expect(without.body.contactMessage.attachment_url).toBeNull();
 
-    for (const attachment_url of ["javascript:alert(1)", "//evil.test/x.pdf", "../../etc/passwd"]) {
+    // Un visiteur ne peut viser ni un fichier du site (suppression à l'effacement du message),
+    // ni une adresse externe, ni un nom devinable.
+    for (const attachment_url of [
+      "javascript:alert(1)",
+      "//evil.test/x.pdf",
+      "../../etc/passwd",
+      "/uploads/hero.png",
+      "/uploads/brief.pdf",
+      "https://evil.test/x.pdf",
+      "/private/../uploads/hero.png",
+      "/private/cv.pdf",
+    ]) {
       expect((await api.post("/api/contact-message").send({ ...base, attachment_url })).status).toBe(400);
     }
   });

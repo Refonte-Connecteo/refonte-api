@@ -96,7 +96,12 @@ const IMAGE_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp", ".gif"]);
 app.use(
   "/uploads",
   (req: Request, res: Response, next: NextFunction) => {
-    const ext = path.extname(req.url).toLowerCase();
+    // CV et pièces jointes (uploads/.private) : jamais servis publiquement.
+    if (req.path.toLowerCase().includes("/.private")) {
+      res.status(404).json({ error: "Fichier introuvable" });
+      return;
+    }
+    const ext = path.extname(req.path).toLowerCase();
     if (!SERVED_EXTENSIONS.has(ext)) {
       res.status(403).json({ error: "Type de fichier non autorisé" });
       return;

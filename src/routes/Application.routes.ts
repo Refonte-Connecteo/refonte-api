@@ -3,7 +3,7 @@ import { body } from "express-validator";
 import { authenticate, requireAdmin } from "../middlewares/auth.middleware.js";
 import { validate } from "../middlewares/validate.js";
 import { validateRequest, stringSchema, rejectUnknownBodyFields } from "../middlewares/validation.middleware.js";
-import { isValidStoredUrl } from "../validations/storedUrl.schema.js";
+import { isPrivateFileRef } from "../utils/privateFiles.js";
 import {
   handleGetAllApplications,
   handleGetApplication,
@@ -22,9 +22,10 @@ const createApplicationValidation = validateRequest([
   stringSchema("last_name", { max: 100 }),
   body("email").trim().isEmail().withMessage("Email invalide"),
   stringSchema("phone", { optional: true, max: 30 }),
+  // Uniquement un fichier déposé via /api/upload/cv : jamais un fichier du site ni une URL externe.
   stringSchema("cv_url", { max: 500 })
-    .custom(isValidStoredUrl)
-    .withMessage("cv_url invalide (chemin /uploads, /images ou URL http(s))"),
+    .custom(isPrivateFileRef)
+    .withMessage("cv_url invalide : utilisez l'adresse renvoyée par /api/upload/cv"),
   stringSchema("cover_letter", { optional: true, max: 5000 }),
 ]);
 

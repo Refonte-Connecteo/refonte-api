@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
+import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import prisma from "../src/lib/prisma.js";
@@ -9,7 +10,7 @@ import {
   purgeExpiredSessions,
   runDataPurge,
 } from "../src/services/purge.service.js";
-import { uploadDirPath } from "../src/middlewares/upload.js";
+import { privateDirPath } from "../src/utils/privateFiles.js";
 import {
   applicationUpdateSchema,
   applicationCreateSchema,
@@ -27,9 +28,9 @@ function monthsAgo(months: number): Date {
 }
 
 function createLocalCvFile(): string {
-  const filename = `purge-test-cv-${Date.now()}-${Math.random().toString(36).slice(2)}.pdf`;
-  fs.writeFileSync(path.join(uploadDirPath, filename), "%PDF-1.4 purge-test");
-  return `/uploads/${filename}`;
+  const filename = `${randomUUID()}.pdf`;
+  fs.writeFileSync(path.join(privateDirPath, filename), "%PDF-1.4 purge-test");
+  return `/private/${filename}`;
 }
 
 describe("Purge des données expirées", () => {
@@ -83,8 +84,8 @@ describe("Purge des données expirées", () => {
 
     expect(await prisma.application.count()).toBe(1);
     expect(await prisma.spontaneous_application.count()).toBe(0);
-    expect(fs.existsSync(path.join(uploadDirPath, path.basename(recentCvUrl)))).toBe(true);
-    expect(fs.existsSync(path.join(uploadDirPath, path.basename(oldCvUrl)))).toBe(false);
+    expect(fs.existsSync(path.join(privateDirPath, path.basename(recentCvUrl)))).toBe(true);
+    expect(fs.existsSync(path.join(privateDirPath, path.basename(oldCvUrl)))).toBe(false);
   });
 
   it("purge les messages de contact de plus de 12 mois et conserve les récents", async () => {

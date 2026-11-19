@@ -2,7 +2,7 @@ import { Router } from "express";
 import { body } from "express-validator";
 import { authenticate, requireAdmin } from "../middlewares/auth.middleware.js";
 import { validateRequest, stringSchema, rejectUnknownBodyFields } from "../middlewares/validation.middleware.js";
-import { isValidStoredUrl } from "../validations/storedUrl.schema.js";
+import { isPrivateFileRef } from "../utils/privateFiles.js";
 import {
   handleGetAllContactMessages,
   handleGetContactMessage,
@@ -21,9 +21,10 @@ const createContactMessageValidation = validateRequest([
   stringSchema("company", { optional: true, max: 200 }),
   stringSchema("country", { optional: true, max: 100 }),
   stringSchema("message", { max: 5000 }),
+  // Uniquement un fichier déposé via /api/upload/contact : jamais un fichier du site ni une URL externe.
   stringSchema("attachment_url", { optional: true, max: 500 })
-    .custom(isValidStoredUrl)
-    .withMessage("attachment_url invalide (chemin /uploads ou URL http(s))"),
+    .custom(isPrivateFileRef)
+    .withMessage("attachment_url invalide : utilisez l'adresse renvoyée par /api/upload/contact"),
 ]);
 
 // Minimisation RGPD : seuls les champs strictement nécessaires sont acceptés.

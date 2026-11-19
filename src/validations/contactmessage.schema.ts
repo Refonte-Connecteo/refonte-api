@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { storedUrlSchema } from "./storedUrl.schema.js";
+import { isPrivateFileRef } from "../utils/privateFiles.js";
 
 // Mode strict : tout champ non prévu est rejeté (minimisation RGPD).
 export const contactMessageCreateSchema = z
@@ -11,6 +11,11 @@ export const contactMessageCreateSchema = z
     company: z.string().max(200).optional().nullable(),
     country: z.string().max(100).optional().nullable(),
     message: z.string().min(1, "Message requis").max(5000),
-    attachment_url: storedUrlSchema.optional().nullable(),
+    attachment_url: z
+      .string()
+      .max(500)
+      .refine(isPrivateFileRef, "attachment_url invalide : utilisez l'adresse renvoyée par /api/upload/contact")
+      .optional()
+      .nullable(),
   })
   .strict();

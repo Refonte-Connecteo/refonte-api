@@ -1,7 +1,9 @@
+import type { Readable } from "node:stream";
 import {
   S3Client,
   PutObjectCommand,
   DeleteObjectCommand,
+  GetObjectCommand,
 } from "@aws-sdk/client-s3";
 
 export interface StorageConfig {
@@ -97,6 +99,26 @@ export async function deleteFile(key: string): Promise<void> {
   });
 
   await getS3Client(config).send(command);
+}
+
+/**
+ * Lit un objet du bucket (fichiers privés servis par l'API à un administrateur, jamais par URL publique).
+ * Renvoie null si l'objet n'existe pas.
+ */
+export async function getFileStream(key: string): Promise<{ body: Readable; contentType?: string } | null> {
+  const config = readStorageConfig();
+  if (!config) {
+    return null;
+  }
+
+  try {
+    const result = await getS3Client(config).send(new GetObjectCommand({ Bucket: config.bucket, Key: key }));
+    if (!result.Body) return null;
+    return { body: result.Body as Readable, contentType: result.ContentType };
+  } catch (err) {
+    if ((err as { name?: string }).name === "NoSuchKey") return null;
+    throw err;
+  }
 }
 
 export function isStorageConfigured(): boolean {

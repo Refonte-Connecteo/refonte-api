@@ -7,6 +7,7 @@ import sharp from "sharp";
 import prisma from "../src/lib/prisma.js";
 import { api, createUser, signToken, resetDatabase } from "./helpers/auth.js";
 import { uploadDirPath } from "../src/middlewares/upload.js";
+import { privateDirPath } from "../src/utils/privateFiles.js";
 import { createUploadCvLimiter } from "../src/middlewares/rateLimit.js";
 import { AuditEventType } from "../src/services/audit.service.js";
 
@@ -45,8 +46,10 @@ function tinyPdf(): Buffer {
 }
 
 function storedPathFromUrl(url: string): string {
-  return path.join(uploadDirPath, path.basename(url));
+  return path.join(url.startsWith("/private/") ? privateDirPath : uploadDirPath, path.basename(url));
 }
+
+const PRIVATE_PDF_URL = /^\/private\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.pdf$/;
 
 describe("Uploads — CV public (sans authentification)", () => {
   beforeEach(async () => {
@@ -59,7 +62,7 @@ describe("Uploads — CV public (sans authentification)", () => {
       .attach("file", tinyPdf(), { filename: "cv.pdf", contentType: "application/pdf" });
 
     expect(res.status).toBe(201);
-    expect(res.body.url).toMatch(/^\/uploads\/[\w.-]+\.pdf$/);
+    expect(res.body.url).toMatch(PRIVATE_PDF_URL);
 
     createdFiles.push(storedPathFromUrl(res.body.url as string));
     expect(fs.existsSync(storedPathFromUrl(res.body.url as string))).toBe(true);
@@ -120,7 +123,7 @@ describe("Uploads — pièce jointe du formulaire de contact", () => {
       .attach("file", tinyPdf(), { filename: "brief.pdf", contentType: "application/pdf" });
 
     expect(res.status).toBe(201);
-    expect(res.body.url).toMatch(/^\/uploads\/[\w.-]+\.pdf$/);
+    expect(res.body.url).toMatch(PRIVATE_PDF_URL);
     createdFiles.push(storedPathFromUrl(res.body.url as string));
   });
 

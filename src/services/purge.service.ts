@@ -2,11 +2,9 @@ import fs from "node:fs";
 import prisma from "../lib/prisma.js";
 import { logger } from "../lib/logger.js";
 import { env } from "../config/env.config.js";
-import { deleteFile } from "./storage.service.js";
-import { uploadDirPath } from "../middlewares/upload.js";
+import { deleteFile, isStorageConfigured } from "./storage.service.js";
 import { getSafeFilePath } from "../utils/safeFile.js";
-
-const LOCAL_UPLOAD_PREFIX = "/uploads/";
+import { isPrivateFileRef, privateDirPath, privateFileNameFromRef, privateStorageKey } from "../utils/privateFiles.js";
 
 /** Date limite de conservation : `months` mois en arrière. */
 function retentionCutoffMonths(months: number): Date {
@@ -21,58 +19,39 @@ function retentionCutoffDays(days: number): Date {
 }
 
 /**
- * Extrait la clé objet d'une URL de stockage S3/R2 du formulaire
- * `https://<endpoint>/<bucket>/<clé>` (cf. publicUrl()).
- */
-function extractStorageKey(fileUrl: string): string | null {
-  try {
-    const url = new URL(fileUrl);
-    if (url.protocol !== "https:" && url.protocol !== "http:") {
-      return null;
-    }
-    const segments = url.pathname.split("/").filter(Boolean);
-    if (segments.length < 2) {
-      return null;
-    }
-    return segments.slice(1).join("/");
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Supprime physiquement un fichier déposé (CV, pièce jointe) référencé par son URL :
- * - chemin local `/uploads/<fichier>` → fichier disque (résolution sécurisée) ;
- * - URL http(s) S3/R2 → objet distant (no-op si le stockage n'est pas configuré).
+ * Supprime physiquement un fichier envoyé par un visiteur (CV, pièce jointe).
+ *
+ * Seules les références privées `/private/<uuid>.<ext>` émises par /api/upload/cv|contact sont
+ * supprimées. Toute autre valeur (ancienne URL `/uploads/...`, URL externe) a pu être choisie par
+ * un visiteur malveillant pour viser un fichier du site (une image du hero, par exemple) : elle
+ * est ignorée. Les vrais fichiers orphelins sont nettoyés par le balayage quotidien.
  * Lève une exception en cas d'échec : l'appelant journalise et continue.
  */
-export async function deleteStoredFile(cvUrl: string): Promise<boolean> {
-  if (typeof cvUrl !== "string" || cvUrl.trim() === "") {
+export async function deleteStoredFile(ref: string): Promise<boolean> {
+  if (!isPrivateFileRef(ref)) {
+    if (typeof ref === "string" && ref.trim() !== "") {
+      logger.warn({ ref }, "Référence de fichier non privée ignorée : aucune suppression");
+    }
     return false;
   }
 
-  if (cvUrl.startsWith(LOCAL_UPLOAD_PREFIX)) {
-    const relativeName = cvUrl.slice(LOCAL_UPLOAD_PREFIX.length);
-    const safePath = getSafeFilePath(uploadDirPath, relativeName);
-    if (!safePath) {
-      logger.warn({ cvUrl }, "Chemin CV suspect ignoré lors de la purge");
-      return false;
-    }
+  const name = privateFileNameFromRef(ref);
+  if (isStorageConfigured()) {
+    await deleteFile(privateStorageKey(name));
+    return true;
+  }
+
+  const safePath = getSafeFilePath(privateDirPath, name);
+  if (!safePath) {
+    return false;
+  }
+  try {
     await fs.promises.unlink(safePath);
-    return true;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw err;
   }
-
-  if (/^https?:\/\//i.test(cvUrl)) {
-    const key = extractStorageKey(cvUrl);
-    if (!key) {
-      logger.warn({ cvUrl }, "URL de CV non exploitable ignorée lors de la purge");
-      return false;
-    }
-    await deleteFile(key);
-    return true;
-  }
-
-  return false;
+  return true;
 }
 
 export interface ExpiredApplicationsPurgeResult {
