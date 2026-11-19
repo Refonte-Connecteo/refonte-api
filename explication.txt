@@ -94,7 +94,7 @@ GESTION DES ADMINISTRATEURS (superAdmin / admin)
        src/databases/seed.ts
          - Crée les types user_type : superAdmin (id=1), admin (id=2)
          - Crée le superAdmin par défaut :
-           email: superadmin@connecteo.fr / password: SuperAdmin123!
+           email: superadmin@connecteo.fr / mot de passe : jamais par défaut, voir « npm run reset-admins »
 
        src/services/email.service.ts
          - Fonction sendInvitationEmail(email, token)
@@ -190,7 +190,9 @@ GESTION DES ADMINISTRATEURS (superAdmin / admin)
 
 5. SUPERADMIN PAR DÉFAUT (seed)
    Email   : superadmin@connecteo.fr
-   Password: SuperAdmin123!
+   Mot de passe : aucun par défaut. Le définir avec
+     SUPERADMIN_PASSWORD='(12 caractères minimum)' npm run reset-admins
+   (mot de passe temporaire, à changer à la première connexion).
 
 
 FRONTEND — Interface d'administration (Next.js)
@@ -245,7 +247,7 @@ FRONTEND — Interface d'administration (Next.js)
    1. Lancer le backend : cd back && npm run dev
    2. Lancer le frontend : cd front && npm run dev
    3. Aller sur http://localhost:3000/admin/login
-   4. Se connecter avec superadmin@connecteo.fr / SuperAdmin123!
+   4. Se connecter avec superadmin@connecteo.fr et le mot de passe défini via reset-admins
    5. Inviter un admin depuis /admin/invite
    6. Récupérer le token depuis le mock email (console du back)
    7. Aller sur /admin/set-password?token=xxx
