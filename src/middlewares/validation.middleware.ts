@@ -203,3 +203,24 @@ export function stringSchema(
 
   return chain;
 }
+
+/** Nom du champ piège (honeypot) des formulaires publics : invisible pour un humain. */
+export const HONEYPOT_FIELD = "website";
+
+/**
+ * Champ piège anti-robots : le formulaire contient un champ caché que seuls les robots remplissent.
+ * S'il est rempli, la requête est ignorée en silence (succès apparent, rien n'est enregistré) ;
+ * sinon il est retiré avant la validation, qui n'accepte que les champs prévus.
+ */
+export function honeypot(req: Request, res: Response, next: NextFunction): void {
+  const body = req.body as Record<string, unknown> | undefined;
+  if (body && typeof body === "object" && HONEYPOT_FIELD in body) {
+    const value = body[HONEYPOT_FIELD];
+    if (typeof value === "string" && value.trim() !== "") {
+      res.status(201).json({ message: "Envoi enregistré" });
+      return;
+    }
+    delete body[HONEYPOT_FIELD];
+  }
+  next();
+}

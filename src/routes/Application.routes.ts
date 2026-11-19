@@ -1,8 +1,9 @@
 import { Router } from "express";
+import { publicFormLimiter } from "../middlewares/rateLimit.js";
 import { body } from "express-validator";
 import { authenticate, requireAdmin } from "../middlewares/auth.middleware.js";
 import { validate } from "../middlewares/validate.js";
-import { validateRequest, stringSchema, rejectUnknownBodyFields } from "../middlewares/validation.middleware.js";
+import { validateRequest, stringSchema, rejectUnknownBodyFields, honeypot } from "../middlewares/validation.middleware.js";
 import { isPrivateFileRef } from "../utils/privateFiles.js";
 import {
   handleGetAllApplications,
@@ -48,6 +49,8 @@ router.get("/:id", authenticate, requireAdmin, handleGetApplication);
 // Public route - submission
 router.post(
   "/",
+  publicFormLimiter,
+  honeypot,
   rejectUnknownBodyFields(APPLICATION_ALLOWED_FIELDS),
   createApplicationValidation,
   handleCreateApplication,

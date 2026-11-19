@@ -1,7 +1,8 @@
 import { Router } from "express";
+import { publicFormLimiter } from "../middlewares/rateLimit.js";
 import { body } from "express-validator";
 import { authenticate, requireAdmin } from "../middlewares/auth.middleware.js";
-import { validateRequest, stringSchema, rejectUnknownBodyFields } from "../middlewares/validation.middleware.js";
+import { validateRequest, stringSchema, rejectUnknownBodyFields, honeypot } from "../middlewares/validation.middleware.js";
 import { isPrivateFileRef } from "../utils/privateFiles.js";
 import {
   handleGetAllContactMessages,
@@ -42,6 +43,8 @@ const CONTACT_MESSAGE_ALLOWED_FIELDS = [
 // Public route - contact form submission
 router.post(
   "/",
+  publicFormLimiter,
+  honeypot,
   rejectUnknownBodyFields(CONTACT_MESSAGE_ALLOWED_FIELDS),
   createContactMessageValidation,
   handleCreateContactMessage,

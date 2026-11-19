@@ -56,7 +56,7 @@ async function persistUploadedFile(
   }
 
   const ext = path.extname(safeOriginal).toLowerCase() || "";
-  const name = `${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`;
+  const name = `${randomUUID()}${ext}`;
   fs.writeFileSync(path.join(uploadDirPath, name), file.buffer);
   return { url: `/uploads/${name}`, filename: name };
 }

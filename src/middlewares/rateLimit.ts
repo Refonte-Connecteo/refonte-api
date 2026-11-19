@@ -15,11 +15,11 @@ const RATE_LIMIT_MESSAGE = { error: "Trop de requêtes. Veuillez réessayer dans
 const authLimitMessage = { error: "Trop de tentatives. Veuillez réessayer dans 30 secondes." };
 
 const uploadLimitMessage = {
-  error: "Trop d'uploads. Veuillez rǸessayer dans quelques minutes.",
+  error: "Trop d'uploads. Veuillez réessayer dans quelques minutes.",
 };
 
 const pageViewLimitMessage = {
-  error: "Trop de requ��tes de tracking. Veuillez rǸessayer plus tard.",
+  error: "Trop de requêtes de tracking. Veuillez réessayer plus tard.",
 };
 
 /**
@@ -58,6 +58,40 @@ export function createUploadCvLimiter(options?: {
 }
 
 export const uploadCvLimiter: RequestHandler = createUploadCvLimiter();
+
+const publicFormLimitMessage = {
+  error: "Trop d'envois depuis votre connexion. Veuillez réessayer dans quelques minutes.",
+};
+
+/**
+ * Formulaires publics (contact, candidature, candidature spontanée) : 5 envois par 15 min et par IP,
+ * contre le spam massif. Élargi en test pour ne pas fausser les autres tests.
+ */
+export function createPublicFormLimiter(options?: { windowMs?: number; max?: number }): RequestHandler {
+  const defaults = IS_TEST ? { windowMs: 60 * 1000, max: 1000 } : { windowMs: 15 * 60 * 1000, max: 5 };
+  const { windowMs, max } = { ...defaults, ...options };
+
+  return rateLimit({
+    windowMs,
+    max,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: publicFormLimitMessage,
+    handler: async (req, res) => {
+      await logAuditEvent({
+        eventType: AuditEventType.RATE_LIMITED,
+        action: "Limite des formulaires publics dépassée",
+        success: false,
+        statusCode: 429,
+        errorCode: "RATE_LIMIT",
+        meta: buildAuditMeta(req),
+      });
+      res.status(429).json(publicFormLimitMessage);
+    },
+  });
+}
+
+export const publicFormLimiter: RequestHandler = createPublicFormLimiter();
 
 /**
  * Limiteur dǸdiǸ aux remontes de vues analytics (par IP).

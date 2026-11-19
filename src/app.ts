@@ -148,12 +148,17 @@ function wantsHtml(req: Request): boolean {
   return accept.includes("text/html");
 }
 
+/** Échappe le texte inséré dans la page d'erreur HTML (un message peut contenir un nom de fichier choisi par le visiteur). */
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
+}
+
 function sendError(res: Response, statusCode: number, message: string, req: Request): void {
   if (wantsHtml(req)) {
     const title = `${statusCode}`;
     res.setHeader("Content-Type", "text/html; charset=utf-8");
     res.status(statusCode).send(
-      `<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><title>${title}</title></head><body><h1>${title} — ${message}</h1></body></html>`,
+      `<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><title>${title}</title></head><body><h1>${title} — ${escapeHtml(message)}</h1></body></html>`,
     );
     return;
   }

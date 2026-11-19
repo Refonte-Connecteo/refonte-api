@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import multer from "multer";
 import sharp from "sharp";
 import path from "path";
@@ -47,6 +48,8 @@ function createUploadMiddleware(options: UploadOptions) {
     fileFilter: (req, file, cb) => {
       const ext = path.extname(file.originalname).toLowerCase().slice(1);
       if (!allowedExtensions.includes(ext)) {
+        // Extension affichée dans le message d'erreur : limitée à des caractères sûrs.
+        const shownExt = ext.replace(/[^a-z0-9]/g, "").slice(0, 10);
         void logAuditEvent({
           eventType: AuditEventType.FILE_UPLOAD_REJECTED,
           action: "Upload rejeté : format non supporté",
@@ -58,7 +61,7 @@ function createUploadMiddleware(options: UploadOptions) {
         }).finally(() =>
           cb(
             new AppError(
-              `Format de fichier non supporté (${ext || "aucune extension"}). Formats acceptés : ${allowedExtensions.join(", ")}`,
+              `Format de fichier non supporté (${shownExt || "aucune extension"}). Formats acceptés : ${allowedExtensions.join(", ")}`,
               400,
             ),
           ),
@@ -179,7 +182,7 @@ export function persistLocalFile(req: Request, _res: Response, next: NextFunctio
     const ext = file.kind
       ? canonicalExtensionForKind(file.kind)
       : path.extname(file.originalname).toLowerCase().slice(1);
-    const name = `${Date.now()}-${Math.round(Math.random() * 1e9)}.${ext}`;
+    const name = `${randomUUID()}.${ext}`;
     fs.writeFileSync(path.join(uploadDirPath, name), file.buffer);
     file.filename = name;
     file.path = path.join(uploadDirPath, name);
