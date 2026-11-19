@@ -205,7 +205,7 @@ describe("Réinitialisation de l'accès d'un admin par le super administrateur",
     // Anciennes sessions et ancien mot de passe : inutilisables.
     expect((await api.get("/api/admin/me").set("Authorization", `Bearer ${session.token}`)).status).toBe(401);
     expect((await api.post("/api/auth/refresh").send({ refreshToken: session.refreshToken })).status).toBe(401);
-    expect((await api.post("/api/auth/login").send({ email: admin.email, password: admin.password })).status).not.toBe(200);
+    expect((await api.post("/api/auth/login").send({ email: admin.email, password: admin.password })).status).toBeGreaterThanOrEqual(400);
 
     const stored = await prisma.user.findUnique({ where: { id: admin.id } });
     expect(stored?.password_hash).toBeNull();
@@ -226,13 +226,13 @@ describe("Réinitialisation de l'accès d'un admin par le super administrateur",
     const setRes = await api
       .post("/api/admin/set-password")
       .send({ email: admin.email, password: "NouveauMotDePasse!2026", invitationToken: res.body.reset_token });
-    expect(setRes.status).toBe(200);
+    expect(setRes.status).toBe(201);
     expect(setRes.body.requireMfaSetup).toBe(true);
 
     const again = await api
       .post("/api/admin/set-password")
       .send({ email: admin.email, password: "EncoreUnAutre!2026", invitationToken: res.body.reset_token });
-    expect(again.status).not.toBe(200);
+    expect(again.status).toBeGreaterThanOrEqual(400);
   });
 
   it("le lien expire au bout d'une heure", async () => {
