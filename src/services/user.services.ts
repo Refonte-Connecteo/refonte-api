@@ -691,7 +691,11 @@ export async function deleteAdmin(adminId: number, ctx?: AuditContext): Promise<
   });
 }
 
-export async function getProfile(userId: number): Promise<SafeUser> {
+/**
+ * Profil de l'utilisateur connecté. Les codes de secours ne sont jamais renvoyés :
+ * seulement combien il en reste, pour l'inviter à en générer de nouveaux à temps.
+ */
+export async function getProfile(userId: number): Promise<SafeUser & { recovery_codes_remaining: number }> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
     include: { user_type: true },
@@ -701,7 +705,7 @@ export async function getProfile(userId: number): Promise<SafeUser> {
     throw new NotFoundError("Utilisateur");
   }
 
-  return toSafeUser(user);
+  return { ...toSafeUser(user), recovery_codes_remaining: user.mfa_recovery_codes.length };
 }
 
 export async function changePassword(userId: number, newPassword: string, ctx?: AuditContext): Promise<void> {

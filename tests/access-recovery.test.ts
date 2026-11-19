@@ -128,6 +128,26 @@ describe("Codes de secours : connexion sans téléphone", () => {
   });
 });
 
+describe("Codes de secours : nombre restant dans le profil", () => {
+  beforeEach(async () => {
+    await resetDatabase();
+  });
+
+  it("indique combien il en reste, sans jamais renvoyer les codes", async () => {
+    const user = await createMfaUser();
+    const [first] = await giveRecoveryCodes(user.id);
+    const ok = await api
+      .post("/api/auth/mfa/verify")
+      .send({ mfaToken: await mfaTokenFor(user.email, user.password), recoveryCode: first });
+    expect(ok.status).toBe(200);
+
+    const me = await api.get("/api/admin/me").set("Authorization", `Bearer ${ok.body.token}`);
+    expect(me.status).toBe(200);
+    expect(me.body.user.recovery_codes_remaining).toBe(RECOVERY_CODE_COUNT - 1);
+    expect(me.body.user).not.toHaveProperty("mfa_recovery_codes");
+  });
+});
+
 describe("Codes de secours : régénération depuis le profil", () => {
   beforeEach(async () => {
     await resetDatabase();
