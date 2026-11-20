@@ -9,7 +9,7 @@ import {
   setPassword,
 } from "../src/services/user.services.js";
 import { createMfaSecret } from "../src/services/mfa.service.js";
-import { UnauthorizedError, BadRequestError, NotFoundError } from "../src/errors/index.js";
+import { UnauthorizedError, BadRequestError } from "../src/errors/index.js";
 
 afterAll(async () => {
   await prisma.$disconnect();
@@ -40,8 +40,8 @@ describe("confirmMfaSetup / verifyMfa (service)", () => {
     await expect(confirmMfaSetup(finalToken, "123456")).rejects.toBeInstanceOf(UnauthorizedError);
   });
 
-  it("setPassword échoue si le compte n'a pas été invité", async () => {
-    await expect(setPassword("inconnu@connecteo.mg", "Password123!", "token-invalide")).rejects.toBeInstanceOf(NotFoundError);
+  it("setPassword échoue si le compte n'a pas été invité (même réponse qu'un lien invalide)", async () => {
+    await expect(setPassword("inconnu@connecteo.mg", "Une phrase de passe solide", "token-invalide")).rejects.toBeInstanceOf(UnauthorizedError);
   });
 
   it("verifyMfa échoue si le MFA n'est pas activé sur le compte", async () => {

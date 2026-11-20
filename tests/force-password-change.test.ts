@@ -64,7 +64,7 @@ describe("Changement de mot de passe forcé (premier login)", () => {
     expect(res.body.error).toBe("Le nouveau mot de passe doit être différent de l'ancien");
   });
 
-  it("refuse si le nouveau mot de passe fait moins de 8 caractères", async () => {
+  it("refuse si le nouveau mot de passe fait moins de 12 caractères", async () => {
     const user = await createUser({ userTypeId: 1, password: "OldPass123!" });
     await prisma.user.update({
       where: { id: user.id },
@@ -77,7 +77,7 @@ describe("Changement de mot de passe forcé (premier login)", () => {
       .set("Authorization", `Bearer ${token}`)
       .send({ newPassword: "Short" });
     expect(res.status).toBe(400);
-    expect(res.body.error).toBe("Le mot de passe doit contenir au moins 8 caractères");
+    expect(res.body.error).toBe("Le mot de passe doit contenir au moins 12 caractères");
   });
 
   it("change le mot de passe, désactive force_password_change et révoque les tokens", async () => {

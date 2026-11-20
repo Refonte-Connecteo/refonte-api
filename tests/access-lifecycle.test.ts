@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import prisma from "../src/lib/prisma.js";
 import {
@@ -35,7 +36,8 @@ describe("Cycle de vie des accès — invitation tokenisée", () => {
     expect(res.body.user.invitation_token_expires).toBeUndefined();
 
     const stored = await prisma.user.findUnique({ where: { email: "invite@connecteo.mg" } });
-    expect(stored?.invitation_token).toBe(res.body.invitation_token);
+    // Seule l'empreinte SHA-256 du lien est stockée en base.
+    expect(stored?.invitation_token).toBe(createHash("sha256").update(res.body.invitation_token).digest("hex"));
     expect(stored?.invitation_token_expires).not.toBeNull();
     const ttl = stored!.invitation_token_expires!.getTime() - Date.now();
     expect(ttl).toBeGreaterThan(71 * 60 * 60 * 1000);
