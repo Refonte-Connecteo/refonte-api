@@ -67,9 +67,9 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-connecteo}
       NODE_ENV: production
       PORT: "3000"
-      FRONTEND_URL: http://localhost:${FRONT_PORT:-3001}
+      FRONTEND_URL: http://${PUBLIC_HOST:-localhost}:${FRONT_PORT:-3001}
     ports:
-      - "127.0.0.1:${API_PORT:-3000}:3000"
+      - "${BIND_ADDRESS:-127.0.0.1}:${API_PORT:-3000}:3000"
     depends_on:
       migrate: { condition: service_completed_successfully }
     <<: *hardening
@@ -95,10 +95,10 @@ services:
       context: ../front
       args:
         # Adresse de l'API vue par le navigateur (figée au build).
-        NEXT_PUBLIC_API_URL: http://localhost:${API_PORT:-3000}/api
+        NEXT_PUBLIC_API_URL: http://${PUBLIC_HOST:-localhost}:${API_PORT:-3000}/api
     restart: unless-stopped
     ports:
-      - "127.0.0.1:${FRONT_PORT:-3001}:3001"
+      - "${BIND_ADDRESS:-127.0.0.1}:${FRONT_PORT:-3001}:3001"
     depends_on:
       api: { condition: service_healthy }
     <<: *hardening
