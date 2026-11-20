@@ -230,6 +230,9 @@ function signMfaToken(userId: number): string {
   return jwt.sign(payload, env.JWT_SECRET, {
     algorithm: env.JWT_ALGORITHM,
     expiresIn: MFA_TOKEN_TTL,
+    // Identifiant unique : deux connexions dans la même seconde donneraient sinon le même
+    // jeton, et le second serait refusé comme déjà utilisé (jeton à usage unique).
+    jwtid: randomBytes(16).toString("hex"),
   });
 }
 
