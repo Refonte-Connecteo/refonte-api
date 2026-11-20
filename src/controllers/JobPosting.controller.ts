@@ -13,7 +13,7 @@ import {
 
 export const handleGetAllJobPostings = asyncHandler(async (req: Request, res: Response) => {
     const onlyActive = !req.user || req.query.onlyActive === "true";
-    const jobPostings = await getAllJobPostings(onlyActive);
+    const jobPostings = await getAllJobPostings(onlyActive, Boolean(req.user));
     res.json({ jobPostings });
 });
 

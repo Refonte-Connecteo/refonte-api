@@ -7,11 +7,19 @@ import { NotFoundError, BadRequestError } from "../errors/index.js";
 
 export type JobPostingInput = Omit<Prisma.job_postingCreateInput, "id">;
 
-export async function getAllJobPostings(onlyActive = false): Promise<job_posting[]> 
+/**
+ * Liste des offres. `withApplications` (administration uniquement) ajoute les identifiants
+ * des candidatures de chaque offre, pour les compter ; jamais renvoyé au public.
+ */
+export async function getAllJobPostings(
+    onlyActive = false,
+    withApplications = false,
+): Promise<(job_posting & { applications?: { id: number }[] })[]>
 {
     return prisma.job_posting.findMany({
         where: onlyActive ? { is_active: true } : undefined,
         orderBy: { created_at: "desc"},
+        ...(withApplications && { include: { applications: { select: { id: true } } } }),
     });
 }
 
