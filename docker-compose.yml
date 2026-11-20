@@ -67,6 +67,10 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-connecteo}
       NODE_ENV: production
       PORT: "3000"
+      # Écoute sur toutes les interfaces du conteneur, sinon le port publié ne l'atteint pas.
+      HOST: 0.0.0.0
+      # La base n'est joignable que sur le réseau interne de Docker : pas de SSL.
+      DATABASE_SSL: "false"
       FRONTEND_URL: http://${PUBLIC_HOST:-localhost}:${FRONT_PORT:-3001}
     ports:
       - "${BIND_ADDRESS:-127.0.0.1}:${API_PORT:-3000}:3000"

@@ -3,12 +3,13 @@ import { PrismaClient } from "../generated/prisma/client.js";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { decryptOrPassthrough, encrypt } from "../utils/crypto.utils.js";
 
+// SSL vérifié en production. DATABASE_SSL=false le désactive pour une base joignable
+// uniquement sur un réseau privé (conteneur « db » de docker-compose).
+const useSsl = process.env.NODE_ENV === "production" && process.env.DATABASE_SSL !== "false";
+
 const adapter = new PrismaPg({
   connectionString: process.env.DATABASE_URL!,
-  ssl:
-    process.env.NODE_ENV === "production"
-      ? { rejectUnauthorized: true }
-      : undefined,
+  ssl: useSsl ? { rejectUnauthorized: true } : undefined,
 });
 
 const baseClient = new PrismaClient({ adapter });
