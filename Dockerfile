@@ -9,10 +9,15 @@
 
 FROM node:22-slim AS build
 
+# OpenSSL : requis par le moteur Prisma (migrate deploy) ; absent de l'image slim.
+RUN apt-get update -y &&     apt-get install -y --no-install-recommends openssl ca-certificates &&     rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 COPY package.json package-lock.json ./
-RUN npm ci
+# Caches npm et Prisma conservés entre deux builds : une connexion coupée ne fait
+# pas tout retélécharger, et les nouvelles tentatives réseau sont plus nombreuses.
+RUN --mount=type=cache,target=/root/.npm     --mount=type=cache,target=/root/.cache/prisma     npm ci --fetch-retries=5 --fetch-retry-mintimeout=20000 --fetch-retry-maxtimeout=120000
 
 COPY prisma ./prisma/
 COPY prisma.config.ts tsconfig.json ./
@@ -38,7 +43,7 @@ RUN groupadd --gid 1001 connecteo && \
 WORKDIR /app
 
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev && npm cache clean --force
+RUN --mount=type=cache,target=/root/.npm     npm ci --omit=dev --fetch-retries=5 --fetch-retry-mintimeout=20000 --fetch-retry-maxtimeout=120000
 
 COPY --from=build /app/dist ./dist/
 
